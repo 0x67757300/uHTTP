@@ -70,9 +70,6 @@ class App:
         self.routes.update({prefix + k: v for k, v in app.routes.items()})
 
     async def __call__(self, scope, receive, send):
-        class Request:
-            pass
-
         if scope['type'] == 'lifespan':
             while True:
                 event = await receive()
@@ -101,6 +98,9 @@ class App:
                     break
 
         elif scope['type'] == 'http':
+            class Request:
+                pass
+
             request = Request()
             request.method = scope['method']
             request.path = scope['path']
@@ -154,19 +154,19 @@ class App:
                 else:
                     raise HTTPException(404)
 
-                if type(ret) is int:
+                if isinstance(ret, int):
                     raise HTTPException(ret)
-                elif type(ret) is str:
+                elif isinstance(ret, str):
                     response = Response(200, body=ret.encode())
-                elif type(ret) is bytes:
+                elif isinstance(ret, bytes):
                     response = Response(200, body=ret)
-                elif type(ret) is dict:
+                elif isinstance(ret, dict):
                     response = Response(
                         status=200,
                         headers={'content-type': 'application/json'},
                         body=json.dumps(ret).encode()
                     )
-                elif type(ret) is Response:
+                elif isinstance(ret, Response):
                     response = ret
                 elif ret is None:
                     response = Response(204)
