@@ -7,7 +7,7 @@ from http.cookies import SimpleCookie, CookieError
 from urllib.parse import parse_qs, unquote
 
 
-MAX_REQUEST_BODY_LENGTH = 1024
+MAX_REQUEST_BODY_LENGTH = 1024**2
 
 
 class Response:
@@ -126,10 +126,10 @@ class App:
                 while True:
                     event = await receive()
                     request.body += event['body']
-                    if not event['more_body']:
-                        break
                     if len(request.body) > MAX_REQUEST_BODY_LENGTH:
                         raise HTTPException(413)
+                    if not event['more_body']:
+                        break
                 content_type = request.headers.get('content-type', '')
                 if 'application/json' in content_type:
                     try:
