@@ -9,14 +9,12 @@ from asyncio import to_thread
 from inspect import iscoroutinefunction
 
 
-MAX_REQUEST_BODY_LENGTH = 1024**2
-
-
 class Request:
     def __init__(
         self,
         method,
         path,
+        *,
         params=None,
         args=None,
         headers=None,
@@ -31,7 +29,7 @@ class Request:
         self.params = params or {}
         self.args = args or {}
         self.headers = headers or {}
-        self.cookies = SimpleCookie(cookies or {})
+        self.cookies = SimpleCookie(cookies)
         self.body = body
         self.json = json or {}
         self.form = form or {}
@@ -39,11 +37,11 @@ class Request:
 
 
 class Response:
-    def __init__(self, status, headers=None, cookies=None, body=b''):
+    def __init__(self, status, *, headers=None, cookies=None, body=b''):
         self.status = status
         self.headers = headers or {}
         self.headers.setdefault('content-type', 'text/html; charset=utf-8')
-        self.cookies = SimpleCookie(cookies or {})
+        self.cookies = SimpleCookie(cookies)
         self.body = body
 
 
@@ -56,17 +54,20 @@ class HTTPException(Exception):
 class App:
     def __init__(
         self,
+        *,
         routes=None,
         startup=None,
         shutdown=None,
         before=None,
-        after=None
+        after=None,
+        max_content=1048576
     ):
-        self.routes = routes or {}
+        self._routes = routes or {}
         self._startup = startup or []
         self._shutdown = shutdown or []
         self._before = before or []
         self._after = after or []
+        self._max_content = max_content
 
     def startup(self, func):
         self._startup.append(func)
@@ -86,7 +87,7 @@ class App:
 
     def route(self, path, methods=('GET',)):
         def decorator(func):
-            self.routes[path] = {method: func for method in methods}
+            self._routes[path] = {method: func for method in methods}
             return func
         return decorator
 
@@ -95,13 +96,15 @@ class App:
         self._shutdown += app._shutdown
         self._before += app._before
         self._after += app._after
-        self.routes.update({prefix + k: v for k, v in app.routes.items()})
+        self._routes.update({prefix + k: v for k, v in app._routes.items()})
+        self._max_content = max(self._max_content, app._max_content)
 
     @staticmethod
     async def asyncfy(func, /, *args, **kwargs):
         if iscoroutinefunction(func):
             return await func(*args, **kwargs)
-        return await to_thread(func, *args, **kwargs)
+        else:
+            return await to_thread(func, *args, **kwargs)
 
     async def __call__(self, scope, receive, send):
         if scope['type'] == 'lifespan':
@@ -150,25 +153,29 @@ class App:
                 while True:
                     event = await receive()
                     request.body += event['body']
-                    if len(request.body) > MAX_REQUEST_BODY_LENGTH:
+                    if len(request.body) > self._max_content:
                         raise HTTPException(413)
                     if not event['more_body']:
                         break
                 content_type = request.headers.get('content-type', '')
                 if 'application/json' in content_type:
                     try:
-                        request.json = json.loads(unquote(request.body))
+                        request.json = await to_thread(
+                            json.loads, unquote(request.body)
+                        )
                     except json.JSONDecodeError:
                         pass
                 elif 'application/x-www-form-urlencoded' in content_type:
                     request.form = {
                         k: v[0] for k, v in
-                        parse_qs(unquote(request.body)).items()
+                        (
+                            await to_thread(parse_qs, unquote(request.body))
+                        ).items()
                     }
 
                 for func in self._before:
                     await self.asyncfy(func, request)
-                for route, methods in self.routes.items():
+                for route, methods in self._routes.items():
                     if matches := re.fullmatch(route, request.path):
                         request.params = matches.groupdict()
                         if func := methods.get(request.method):
