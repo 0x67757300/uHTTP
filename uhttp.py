@@ -1,13 +1,41 @@
 """µHTTP - ASGI micro framework"""
 
-import json
 import re
+import json
 from http import HTTPStatus
 from http.cookies import SimpleCookie, CookieError
 from urllib.parse import parse_qs, unquote
+from asyncio import to_thread
+from inspect import iscoroutinefunction
 
 
 MAX_REQUEST_BODY_LENGTH = 1024**2
+
+
+class Request:
+    def __init__(
+        self,
+        method,
+        path,
+        params=None,
+        args=None,
+        headers=None,
+        cookies=None,
+        body=b'',
+        json=None,
+        form=None,
+        state=None
+    ):
+        self.method = method
+        self.path = path
+        self.params = params or {}
+        self.args = args or {}
+        self.headers = headers or {}
+        self.cookies = SimpleCookie(cookies or {})
+        self.body = body
+        self.json = json or {}
+        self.form = form or {}
+        self.state = state or {}
 
 
 class Response:
@@ -69,6 +97,12 @@ class App:
         self._after += app._after
         self.routes.update({prefix + k: v for k, v in app.routes.items()})
 
+    @staticmethod
+    async def asyncfy(func, /, *args, **kwargs):
+        if iscoroutinefunction(func):
+            return await func(*args, **kwargs)
+        return await to_thread(func, *args, **kwargs)
+
     async def __call__(self, scope, receive, send):
         if scope['type'] == 'lifespan':
             while True:
@@ -76,7 +110,7 @@ class App:
                 if event['type'] == 'lifespan.startup':
                     try:
                         for func in self._startup:
-                            await func(scope['state'])
+                            await self.asyncfy(func, scope['state'])
                     except Exception as e:
                         await send({
                             'type': 'lifespan.startup.failed',
@@ -87,7 +121,7 @@ class App:
                 elif event['type'] == 'lifespan.shutdown':
                     try:
                         for func in self._shutdown:
-                            await func(scope['state'])
+                            await self.asyncfy(func, scope['state'])
                     except Exception as e:
                         await send({
                             'type': 'lifespan.shutdown.failed',
@@ -98,30 +132,20 @@ class App:
                     break
 
         elif scope['type'] == 'http':
-            class Request:
-                pass
-
-            request = Request()
-            request.method = scope['method']
-            request.path = scope['path']
-            request.params = {}
-            request.args = {
-                k: v[0] for k, v in
-                parse_qs(unquote(scope['query_string'])).items()
-            }
-            request.headers = {
-                unquote(k): unquote(v) for k, v in scope['headers']
-            }
-            request.cookies = SimpleCookie()
+            request = Request(
+                method=scope['method'],
+                path=scope['path'],
+                args={
+                    k: v[0] for k, v in
+                    parse_qs(unquote(scope['query_string'])).items()
+                },
+                headers={unquote(k): unquote(v) for k, v in scope['headers']},
+                state=scope['state'].copy()
+            )
             try:
                 request.cookies.load(request.headers.get('cookie', ''))
             except CookieError:
                 pass
-            request.state = scope['state'].copy()
-            request.body = b''
-            request.json = {}
-            request.form = {}
-
             try:
                 while True:
                     event = await receive()
@@ -141,14 +165,14 @@ class App:
                         k: v[0] for k, v in
                         parse_qs(unquote(request.body)).items()
                     }
-                for func in self._before:
-                    await func(request)
 
+                for func in self._before:
+                    await self.asyncfy(func, request)
                 for route, methods in self.routes.items():
                     if matches := re.fullmatch(route, request.path):
                         request.params = matches.groupdict()
                         if func := methods.get(request.method):
-                            ret = await func(request)
+                            ret = await self.asyncfy(func, request)
                             break
                         raise HTTPException(405)
                 else:
@@ -176,7 +200,7 @@ class App:
             except HTTPException as e:
                 response = Response(status=e.status, body=e.body.encode())
             for func in self._after:
-                await func(request, response)
+                await self.asyncfy(func, request, response)
             response.headers['content-length'] = len(response.body)
 
             await send({

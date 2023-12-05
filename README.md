@@ -13,6 +13,6 @@ Pythonic web development.
 
 ### TODO
 
-- [ ] `asyncfy`
+- [x] `asyncfy`
 - [ ] `uhttp-jinja`
 - [ ] Documentation
