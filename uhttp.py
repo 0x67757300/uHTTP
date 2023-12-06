@@ -36,19 +36,20 @@ class Request:
         self.state = state or {}
 
 
-class Response:
+class Response(Exception):
     def __init__(self, status, *, headers=None, cookies=None, body=b''):
         self.status = status
+        try:
+            self.description = HTTPStatus(status).phrase
+        except ValueError:
+            self.description = ''
+        super().__init__(self.description)
         self.headers = headers or {}
         self.headers.setdefault('content-type', 'text/html; charset=utf-8')
         self.cookies = SimpleCookie(cookies)
         self.body = body
-
-
-class HTTPException(Exception):
-    def __init__(self, status, body=''):
-        self.status = status
-        self.body = body or HTTPStatus(status).phrase
+        if not self.body and (status >= 400 and status < 600):
+            self.body = str(self).encode()
 
 
 class App:
@@ -96,6 +97,9 @@ class App:
     def get(self, path):
         return self.route(path, methods=('GET',))
 
+    def head(self, path):
+        return self.route(path, methods=('HEAD',))
+
     def post(self, path):
         return self.route(path, methods=('POST',))
 
@@ -104,6 +108,18 @@ class App:
 
     def delete(self, path):
         return self.route(path, methods=('DELETE',))
+
+    def connect(self, path):
+        return self.route(path, methods=('CONNECT',))
+
+    def options(self, path):
+        return self.route(path, methods=('OPTIONS',))
+
+    def trace(self, path):
+        return self.route(path, methods=('TRACE',))
+
+    def patch(self, path):
+        return self.route(path, methods=('PATCH',))
 
     async def mount(self, app, prefix=''):
         self._startup += app._startup
@@ -147,7 +163,6 @@ class App:
                         break
                     await send({'type': 'lifespan.shutdown.complete'})
                     break
-
         elif scope['type'] == 'http':
             request = Request(
                 method=scope['method'],
@@ -168,7 +183,7 @@ class App:
                     event = await receive()
                     request.body += event['body']
                     if len(request.body) > self._max_content:
-                        raise HTTPException(413)
+                        raise Response(413)
                     if not event['more_body']:
                         break
                 content_type = request.headers.get('content-type', '')
@@ -186,7 +201,6 @@ class App:
                             await to_thread(parse_qs, unquote(request.body))
                         ).items()
                     }
-
                 for func in self._before:
                     await self.asyncfy(func, request)
                 for route, methods in self._routes.items():
@@ -195,12 +209,11 @@ class App:
                         if func := methods.get(request.method):
                             ret = await self.asyncfy(func, request)
                             break
-                        raise HTTPException(405)
+                        raise Response(405)
                 else:
-                    raise HTTPException(404)
-
+                    raise Response(404)
                 if isinstance(ret, int):
-                    raise HTTPException(ret)
+                    raise Response(ret)
                 elif isinstance(ret, str):
                     response = Response(200, body=ret.encode())
                 elif isinstance(ret, bytes):
@@ -217,13 +230,11 @@ class App:
                     response = Response(204)
                 else:
                     raise ValueError('Invalid response type')
-
-            except HTTPException as e:
-                response = Response(status=e.status, body=e.body.encode())
+            except Response as early_response:
+                response = early_response
             for func in self._after:
                 await self.asyncfy(func, request, response)
             response.headers['content-length'] = len(response.body)
-
             await send({
                 'type': 'http.response.start',
                 'status': response.status,
