@@ -87,9 +87,23 @@ class App:
 
     def route(self, path, methods=('GET',)):
         def decorator(func):
-            self._routes[path] = {method: func for method in methods}
+            self._routes.setdefault(path, {}).update({
+                method: func for method in methods
+            })
             return func
         return decorator
+
+    def get(self, path):
+        return self.route(path, methods=('GET',))
+
+    def post(self, path):
+        return self.route(path, methods=('POST',))
+
+    def put(self, path):
+        return self.route(path, methods=('PUT',))
+
+    def delete(self, path):
+        return self.route(path, methods=('DELETE',))
 
     async def mount(self, app, prefix=''):
         self._startup += app._startup
@@ -161,7 +175,7 @@ class App:
                 if 'application/json' in content_type:
                     try:
                         request.json = await to_thread(
-                            json.loads, unquote(request.body)
+                            json.loads, request.body.decode(errors='replace')
                         )
                     except json.JSONDecodeError:
                         pass
