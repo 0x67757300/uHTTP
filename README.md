@@ -14,7 +14,7 @@ Pythonic web development.
 ### TODO
 
 - [x] `asyncfy`
-- [ ] `MultiDict`
+- [x] `MultiDict`
 - [ ] `uhttp-jinja`
+- [ ] Tests
 - [ ] Documentation
-- [ ] Package

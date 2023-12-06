@@ -9,6 +9,69 @@ from asyncio import to_thread
 from inspect import iscoroutinefunction
 
 
+async def asyncfy(func, /, *args, **kwargs):
+    if iscoroutinefunction(func):
+        return await func(*args, **kwargs)
+    else:
+        return await to_thread(func, *args, **kwargs)
+
+
+class MultiDict(dict):
+    def __init__(self, mapping=None):
+        if mapping is None:
+            super().__init__()
+        elif isinstance(mapping, MultiDict):
+            super().__init__({k: v[:] for k, v in mapping.itemslist()})
+        elif isinstance(mapping, dict):
+            super().__init__({
+                k: [v] if not isinstance(v, list) else v[:]
+                for k, v in mapping.items()
+            })
+        elif isinstance(mapping, (tuple, list)):
+            super().__init__()
+            for key, value in mapping:
+                self.setdefaultlist(key, []).append(value)
+        else:
+            raise TypeError('Invalid mapping type')
+
+    def __getitem__(self, key):
+        return super().__getitem__(key)[-1]
+
+    def __setitem__(self, key, value):
+        super().setdefault(key, []).append(value)
+
+    def getlist(self, key, default=(None,)):
+        return super().get(key, list(default))
+
+    def get(self, key, default=None):
+        return super().get(key, [default])[-1]
+
+    def itemslist(self):
+        return super().items()
+
+    def items(self):
+        return {k: v[-1] for k, v in super().items()}.items()
+
+    def poplist(self, key, default=(None,)):
+        return super().pop(key, list(default))
+
+    def pop(self, key, default=None):
+        values = self.getlist(key, [])
+        return values.pop() if len(values) > 1 else super().pop(key, default)
+
+    def setdefaultlist(self, key, default=(None,)):
+        return super().setdefault(key, list(default))
+
+    def setdefault(self, key, default=None):
+        return super().setdefault(key, [default])[-1]
+
+    def valueslist(self):
+        return super().values()
+
+    def values(self):
+        return {k: v[-1] for k, v in super().items()}.values()
+
+
 class Request:
     def __init__(
         self,
@@ -27,8 +90,8 @@ class Request:
         self.method = method
         self.path = path
         self.params = params or {}
-        self.args = args or {}
-        self.headers = headers or {}
+        self.args = MultiDict(args)
+        self.headers = MultiDict(headers)
         self.cookies = SimpleCookie(cookies)
         self.body = body
         self.json = json or {}
@@ -44,11 +107,11 @@ class Response(Exception):
         except ValueError:
             self.description = ''
         super().__init__(self.description)
-        self.headers = headers or {}
+        self.headers = MultiDict(headers)
         self.headers.setdefault('content-type', 'text/html; charset=utf-8')
         self.cookies = SimpleCookie(cookies)
         self.body = body
-        if not self.body and (status >= 400 and status < 600):
+        if not self.body and status in range(400, 600):
             self.body = str(self).encode()
 
 
@@ -69,6 +132,14 @@ class App:
         self._before = before or []
         self._after = after or []
         self._max_content = max_content
+
+    def mount(self, app, prefix=''):
+        self._startup += app._startup
+        self._shutdown += app._shutdown
+        self._before += app._before
+        self._after += app._after
+        self._routes.update({prefix + k: v for k, v in app._routes.items()})
+        self._max_content = max(self._max_content, app._max_content)
 
     def startup(self, func):
         self._startup.append(func)
@@ -121,29 +192,17 @@ class App:
     def patch(self, path):
         return self.route(path, methods=('PATCH',))
 
-    async def mount(self, app, prefix=''):
-        self._startup += app._startup
-        self._shutdown += app._shutdown
-        self._before += app._before
-        self._after += app._after
-        self._routes.update({prefix + k: v for k, v in app._routes.items()})
-        self._max_content = max(self._max_content, app._max_content)
-
-    @staticmethod
-    async def asyncfy(func, /, *args, **kwargs):
-        if iscoroutinefunction(func):
-            return await func(*args, **kwargs)
-        else:
-            return await to_thread(func, *args, **kwargs)
-
     async def __call__(self, scope, receive, send):
         if scope['type'] == 'lifespan':
             while True:
                 event = await receive()
                 if event['type'] == 'lifespan.startup':
                     try:
+                        self._routes = {
+                            re.compile(k): v for k, v in self._routes.items()
+                        }
                         for func in self._startup:
-                            await self.asyncfy(func, scope['state'])
+                            await asyncfy(func, scope['state'])
                     except Exception as e:
                         await send({
                             'type': 'lifespan.startup.failed',
@@ -154,7 +213,7 @@ class App:
                 elif event['type'] == 'lifespan.shutdown':
                     try:
                         for func in self._shutdown:
-                            await self.asyncfy(func, scope['state'])
+                            await asyncfy(func, scope['state'])
                     except Exception as e:
                         await send({
                             'type': 'lifespan.shutdown.failed',
@@ -163,22 +222,24 @@ class App:
                         break
                     await send({'type': 'lifespan.shutdown.complete'})
                     break
+
         elif scope['type'] == 'http':
             request = Request(
                 method=scope['method'],
                 path=scope['path'],
-                args={
-                    k: v[0] for k, v in
-                    parse_qs(unquote(scope['query_string'])).items()
-                },
-                headers={unquote(k): unquote(v) for k, v in scope['headers']},
+                args=parse_qs(unquote(scope['query_string'])),
+                headers=[
+                    [unquote(k), unquote(v)] for k, v in scope['headers']
+                ],
                 state=scope['state'].copy()
             )
+
             try:
-                request.cookies.load(request.headers.get('cookie', ''))
-            except CookieError:
-                pass
-            try:
+                try:
+                    request.cookies.load(request.headers.get('cookie', ''))
+                except CookieError:
+                    raise Response(404)
+
                 while True:
                     event = await receive()
                     request.body += event['body']
@@ -186,6 +247,7 @@ class App:
                         raise Response(413)
                     if not event['more_body']:
                         break
+
                 content_type = request.headers.get('content-type', '')
                 if 'application/json' in content_type:
                     try:
@@ -193,27 +255,28 @@ class App:
                             json.loads, request.body.decode(errors='replace')
                         )
                     except json.JSONDecodeError:
-                        pass
+                        raise Response(400)
                 elif 'application/x-www-form-urlencoded' in content_type:
-                    request.form = {
-                        k: v[0] for k, v in
-                        (
-                            await to_thread(parse_qs, unquote(request.body))
-                        ).items()
-                    }
+                    request.form = await to_thread(
+                        parse_qs, unquote(request.body)
+                    )
+
                 for func in self._before:
-                    await self.asyncfy(func, request)
+                    await asyncfy(func, request)
+
                 for route, methods in self._routes.items():
-                    if matches := re.fullmatch(route, request.path):
+                    if matches := route.fullmatch(request.path):
                         request.params = matches.groupdict()
                         if func := methods.get(request.method):
-                            ret = await self.asyncfy(func, request)
+                            ret = await asyncfy(func, request)
                             break
-                        raise Response(405)
+                        else:
+                            raise Response(405)
                 else:
                     raise Response(404)
+
                 if isinstance(ret, int):
-                    raise Response(ret)
+                    response = Response(ret)
                 elif isinstance(ret, str):
                     response = Response(200, body=ret.encode())
                 elif isinstance(ret, bytes):
@@ -230,27 +293,34 @@ class App:
                     response = Response(204)
                 else:
                     raise ValueError('Invalid response type')
+
             except Response as early_response:
                 response = early_response
+
             for func in self._after:
-                await self.asyncfy(func, request, response)
-            response.headers['content-length'] = len(response.body)
+                await asyncfy(func, request, response)
+
+            response.headers.update({'content-length': [len(response.body)]})
+            if response.cookies:
+                response.headers.update({
+                    'set-cookie': [
+                        header.split(': ')[1]
+                        for header in response.cookies.output().splitlines()
+                    ]
+                })
+
             await send({
                 'type': 'http.response.start',
                 'status': response.status,
                 'headers': [
                     [str(k).lower().encode(), str(v).encode()]
-                    for k, v in response.headers.items()
-                ] + [
-                    [k.lower().encode(), v.encode()] for k, v in (
-                        header.split(': ', maxsplit=1) for header in
-                        response.cookies.output().splitlines()
-                    )
+                    for k, l in response.headers.itemslist() for v in l
                 ]
             })
             await send({
                 'type': 'http.response.body',
                 'body': response.body
             })
+
         else:
             raise NotImplementedError(scope['type'], 'is not supported')
