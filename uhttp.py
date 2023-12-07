@@ -5,6 +5,7 @@ import json
 from http import HTTPStatus
 from http.cookies import SimpleCookie, CookieError
 from urllib.parse import parse_qs, unquote
+from unicodedata import normalize
 from asyncio import to_thread
 from inspect import iscoroutinefunction
 
@@ -196,6 +197,7 @@ class App:
         if scope['type'] == 'lifespan':
             while True:
                 event = await receive()
+
                 if event['type'] == 'lifespan.startup':
                     try:
                         self._routes = {
@@ -210,6 +212,7 @@ class App:
                         })
                         break
                     await send({'type': 'lifespan.startup.complete'})
+
                 elif event['type'] == 'lifespan.shutdown':
                     try:
                         for func in self._shutdown:
@@ -229,7 +232,11 @@ class App:
                 path=scope['path'],
                 args=parse_qs(unquote(scope['query_string'])),
                 headers=[
-                    [unquote(k), unquote(v)] for k, v in scope['headers']
+                    [
+                        k.decode('ascii', errors='replace'),
+                        normalize('NFC', v.decode('latin1', errors='replace')),
+                    ]
+                    for k, v in scope['headers']
                 ],
                 state=scope['state'].copy()
             )
@@ -238,7 +245,7 @@ class App:
                 try:
                     request.cookies.load(request.headers.get('cookie', ''))
                 except CookieError:
-                    raise Response(404)
+                    raise Response(400)
 
                 while True:
                     event = await receive()
@@ -252,9 +259,9 @@ class App:
                 if 'application/json' in content_type:
                     try:
                         request.json = await to_thread(
-                            json.loads, request.body.decode(errors='replace')
+                            json.loads, request.body.decode()
                         )
-                    except json.JSONDecodeError:
+                    except (json.JSONDecodeError, UnicodeError):
                         raise Response(400)
                 elif 'application/x-www-form-urlencoded' in content_type:
                     request.form = await to_thread(
@@ -271,7 +278,10 @@ class App:
                             ret = await asyncfy(func, request)
                             break
                         else:
-                            raise Response(405)
+                            raise Response(
+                                status=405,
+                                headers={'allow': ', '.join(methods)}
+                            )
                 else:
                     raise Response(404)
 
