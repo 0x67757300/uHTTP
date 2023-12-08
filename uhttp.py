@@ -231,17 +231,18 @@ class App:
                 method=scope['method'],
                 path=scope['path'],
                 args=parse_qs(unquote(scope['query_string'])),
-                headers=[
-                    [
-                        k.decode('ascii', errors='replace'),
-                        normalize('NFC', v.decode('latin1', errors='replace')),
-                    ]
-                    for k, v in scope['headers']
-                ],
                 state=scope['state'].copy()
             )
 
             try:
+                try:
+                    request.headers = MultiDict(
+                        [k.decode('ascii'), normalize('NFC', v.decode())]
+                        for k, v in scope['headers']
+                    )
+                except UnicodeDecodeError:
+                    raise Response(400)
+
                 try:
                     request.cookies.load(request.headers.get('cookie', ''))
                 except CookieError:
@@ -261,7 +262,7 @@ class App:
                         request.json = await to_thread(
                             json.loads, request.body.decode()
                         )
-                    except (json.JSONDecodeError, UnicodeError):
+                    except (UnicodeDecodeError, json.JSONDecodeError):
                         raise Response(400)
                 elif 'application/x-www-form-urlencoded' in content_type:
                     request.form = await to_thread(
