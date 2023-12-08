@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "uhttp"
+version = "1.0.1"
+description = "Pythonic web development."
+authors = ["gus <0x67757300@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
