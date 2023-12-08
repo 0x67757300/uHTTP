@@ -96,7 +96,7 @@ class Request:
         self.cookies = SimpleCookie(cookies)
         self.body = body
         self.json = json or {}
-        self.form = form or {}
+        self.form = MultiDict(form)
         self.state = state or {}
 
 
@@ -200,11 +200,11 @@ class App:
 
                 if event['type'] == 'lifespan.startup':
                     try:
+                        for func in self._startup:
+                            await asyncfy(func, scope['state'])
                         self._routes = {
                             re.compile(k): v for k, v in self._routes.items()
                         }
-                        for func in self._startup:
-                            await asyncfy(func, scope['state'])
                     except Exception as e:
                         await send({
                             'type': 'lifespan.startup.failed',
@@ -236,10 +236,10 @@ class App:
 
             try:
                 try:
-                    request.headers = MultiDict(
+                    request.headers = MultiDict([
                         [k.decode('ascii'), normalize('NFC', v.decode())]
                         for k, v in scope['headers']
-                    )
+                    ])
                 except UnicodeDecodeError:
                     raise Response(400)
 

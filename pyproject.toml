@@ -1,10 +1,12 @@
 [tool.poetry]
-name = "uhttp"
-version = "1.0.1"
-description = "Pythonic web development."
+name = "uHTTP"
+version = "1.0"
+description = "Pythonic web development"
 authors = ["gus <0x67757300@gmail.com>"]
 license = "MIT"
 readme = "README.md"
+repository = "https://github.com/0x67757300/uHTTP"
+keywords = ["asgi", "web", "http"]
 
 [tool.poetry.dependencies]
 python = "^3.9"
