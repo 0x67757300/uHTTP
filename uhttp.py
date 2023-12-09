@@ -72,6 +72,14 @@ class MultiDict(dict):
     def values(self):
         return {k: v[-1] for k, v in super().items()}.values()
 
+    def _update(self, *args, **kwargs):
+        super().update(*args, **kwargs)
+
+    def update(self, *args, **kwargs):
+        new = {}
+        new.update(*args, **kwargs)
+        super().update(MultiDict(new))
+
 
 class Request:
     def __init__(
@@ -320,15 +328,15 @@ class App:
                 response = Response(status=e.status, body=str(e).encode())
 
             for func in self._after:
-                if ret := asyncfy(func, request, response):
+                if ret := await asyncfy(func, request, response):
                     response = Response.from_any(ret)
                     break
 
-            response.headers.update({'content-length': [len(response.body)]})
+            response.headers._update({'content-length': [len(response.body)]})
             if response.cookies:
                 response.headers.update({
                     'set-cookie': [
-                        header.split(': ')[1]
+                        header.split(': ', maxsplit=1)[1]
                         for header in response.cookies.output().splitlines()
                     ]
                 })
