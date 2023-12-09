@@ -31,7 +31,7 @@ class MultiDict(dict):
         elif isinstance(mapping, (tuple, list)):
             super().__init__()
             for key, value in mapping:
-                self.setdefaultlist(key, []).append(value)
+                self._setdefault(key, []).append(value)
         else:
             raise TypeError('Invalid mapping type')
 
@@ -41,32 +41,32 @@ class MultiDict(dict):
     def __setitem__(self, key, value):
         super().setdefault(key, []).append(value)
 
-    def getlist(self, key, default=(None,)):
+    def _get(self, key, default=(None,)):
         return super().get(key, list(default))
 
     def get(self, key, default=None):
         return super().get(key, [default])[-1]
 
-    def itemslist(self):
+    def _items(self):
         return super().items()
 
     def items(self):
         return {k: v[-1] for k, v in super().items()}.items()
 
-    def poplist(self, key, default=(None,)):
+    def _pop(self, key, default=(None,)):
         return super().pop(key, list(default))
 
     def pop(self, key, default=None):
-        values = self.getlist(key, [])
+        values = super().get(key, [])
         return values.pop() if len(values) > 1 else super().pop(key, default)
 
-    def setdefaultlist(self, key, default=(None,)):
+    def _setdefault(self, key, default=(None,)):
         return super().setdefault(key, list(default))
 
     def setdefault(self, key, default=None):
         return super().setdefault(key, [default])[-1]
 
-    def valueslist(self):
+    def _values(self):
         return super().values()
 
     def values(self):
@@ -99,21 +99,47 @@ class Request:
         self.form = MultiDict(form)
         self.state = state or {}
 
+    def __repr__(self):
+        return f'{self.method} {self.path}'
 
-class Response(Exception):
+
+class Response:
     def __init__(self, status, *, headers=None, cookies=None, body=b''):
         self.status = status
-        try:
-            self.description = HTTPStatus(status).phrase
-        except ValueError:
-            self.description = ''
-        super().__init__(self.description)
         self.headers = MultiDict(headers)
         self.headers.setdefault('content-type', 'text/html; charset=utf-8')
         self.cookies = SimpleCookie(cookies)
         self.body = body
-        if not self.body and status in range(400, 600):
-            self.body = str(self).encode()
+
+    def __repr__(self):
+        return str(self.status)
+
+    @classmethod
+    def from_any(cls, any):
+        if isinstance(any, int):
+            return cls(status=any, body=HTTPStatus(any).phrase.encode())
+        elif isinstance(any, str):
+            return cls(status=200, body=any.encode())
+        elif isinstance(any, bytes):
+            return cls(status=200, body=any)
+        elif isinstance(any, dict):
+            return cls(
+                status=200,
+                headers={'content-type': 'application/json'},
+                body=json.dumps(any).encode()
+            )
+        elif isinstance(any, cls):
+            return any
+        elif any is None:
+            return cls(status=204)
+        else:
+            raise TypeError
+
+
+class HTTPException(Exception):
+    def __init__(self, status, description=''):
+        self.status = status
+        super().__init__(description or HTTPStatus(status).phrase)
 
 
 class App:
@@ -241,18 +267,18 @@ class App:
                         for k, v in scope['headers']
                     ])
                 except UnicodeDecodeError:
-                    raise Response(400)
+                    raise HTTPException(400)
 
                 try:
                     request.cookies.load(request.headers.get('cookie', ''))
                 except CookieError:
-                    raise Response(400)
+                    raise HTTPException(400)
 
                 while True:
                     event = await receive()
                     request.body += event['body']
                     if len(request.body) > self._max_content:
-                        raise Response(413)
+                        raise HTTPException(413)
                     if not event['more_body']:
                         break
 
@@ -263,53 +289,40 @@ class App:
                             json.loads, request.body.decode()
                         )
                     except (UnicodeDecodeError, json.JSONDecodeError):
-                        raise Response(400)
+                        raise HTTPException(400)
                 elif 'application/x-www-form-urlencoded' in content_type:
                     request.form = await to_thread(
                         parse_qs, unquote(request.body)
                     )
 
+                response = None
+
                 for func in self._before:
-                    await asyncfy(func, request)
+                    if ret := await asyncfy(func, request):
+                        response = Response.from_any(ret)
+                        break
 
-                for route, methods in self._routes.items():
-                    if matches := route.fullmatch(request.path):
-                        request.params = matches.groupdict()
-                        if func := methods.get(request.method):
-                            ret = await asyncfy(func, request)
+                if not response:
+                    for route, methods in self._routes.items():
+                        if matches := route.fullmatch(request.path):
+                            request.params = matches.groupdict()
+                            if func := methods.get(request.method):
+                                ret = await asyncfy(func, request)
+                                response = Response.from_any(ret)
+                            else:
+                                response = Response.from_any(405)
+                                response.headers['allow'] = ', '.join(methods)
                             break
-                        else:
-                            raise Response(
-                                status=405,
-                                headers={'allow': ', '.join(methods)}
-                            )
-                else:
-                    raise Response(404)
+                    else:
+                        response = Response.from_any(404)
 
-                if isinstance(ret, int):
-                    response = Response(ret)
-                elif isinstance(ret, str):
-                    response = Response(200, body=ret.encode())
-                elif isinstance(ret, bytes):
-                    response = Response(200, body=ret)
-                elif isinstance(ret, dict):
-                    response = Response(
-                        status=200,
-                        headers={'content-type': 'application/json'},
-                        body=json.dumps(ret).encode()
-                    )
-                elif isinstance(ret, Response):
-                    response = ret
-                elif ret is None:
-                    response = Response(204)
-                else:
-                    raise ValueError('Invalid response type')
-
-            except Response as early_response:
-                response = early_response
+            except HTTPException as e:
+                response = Response(status=e.status, body=str(e).encode())
 
             for func in self._after:
-                await asyncfy(func, request, response)
+                if ret := asyncfy(func, request, response):
+                    response = Response.from_any(ret)
+                    break
 
             response.headers.update({'content-length': [len(response.body)]})
             if response.cookies:
@@ -325,7 +338,7 @@ class App:
                 'status': response.status,
                 'headers': [
                     [str(k).lower().encode(), str(v).encode()]
-                    for k, l in response.headers.itemslist() for v in l
+                    for k, l in response.headers._items() for v in l
                 ]
             })
             await send({
