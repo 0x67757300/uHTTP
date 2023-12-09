@@ -49,6 +49,7 @@ if __name__ == '__main__':
 - Extremely modular, entire extensions can just follow the simple App pattern.
 - **Very** opinionated, to the point where it has no opinions.
 - Fast, because it doesn't really do much.
+- Flexible, say what you will about wrong responses, they work.
 - Not about types.
 
 ### Motivations
@@ -184,19 +185,19 @@ Any value returned from the decorated functions will set the response and break 
 `@app.before` functions receive only a request argument. They are called before a response is made, i.e. before the route function (if there is one). Particularly, `request.params` is still empty at this point. This is a great place to handle bad requests. The early response pattern:
 
 ```python
-from uhttp import App, HTTPException
+from uhttp import App, Response
 
 app = App()
 
 @app.before
 def auth(request):
     if 'user' not in requet.state:
-        raise HTTPException(401)
+        raise Response(401)
     if request.state['user']['credits'] < 1:
         return 402
 ```
 
-`@app.after` functions receive a `request` and a `response`. They are called after a response is made. You should modify the response here. `HTTPException` shouldn't be raised here.
+`@app.after` functions receive a `request` and a `response`. They are called after a response is made. You should modify the response here.
 
 ```python
 @app.after
@@ -295,21 +296,44 @@ def parse_multipart(request):
                 else:
                     request.form[part.name] = part.value
         except MultipartError:
-            raise HTTPException(400)
+            raise Response(400)
 ```
 
 ### Responses
 
-_Relax, they already know._
+_Yes, they are wrong._
 
-#### `class Response`
+#### `class Response(Exception)`
 
 Attributes:
 
 - `status`: `int`
+- `description`: `str` derived from `status`
 - `headers`: `MultiDict`
 - `cookies`: `SimpleCookie`
 - `body`: `bytes`
+
+The fact that `Response` inherits from `Exception` is what makes µHTTP so flexible. For exemple, let's write a simple "dependency injection":
+
+```python
+def pay(request, cost):
+    user = request.state.get('user')
+    if not user:
+        raise Response(401)
+    if user.money < cost:
+        raise Response(402, body=b'Insufficient funds!')
+    user.money -= cost
+    return user
+
+@app.get('/buy/bananas')
+def see_bananas(request):
+    return "Hey there, see any bananas that you'd like?"
+
+@app.post('/buy/bananas')
+def buy_bananas(request):
+    user = pay(request, 5)
+    return f'Congratulations! {user.name} just bought a banana!'
+```
 
 #### `response.from_any(any)`
 
@@ -335,36 +359,11 @@ def hello(request):
     return template.render(name=request.args.get('name'))
 ```
 
-### HTTPException
+### Internals
 
-_Raise 'em, don't, what do I care?_
+µHTTP runs all synchronous code in a separate thread, so as to not block the main loop. As long as your code is thread-safe things should be fine. E.g. instead of opening one `sqlite3` connection at startup, consider opening one for every request or just using [`aiosqlite`](https://github.com/omnilib/aiosqlite).
 
-#### `class HTTPException(Exception)`
-
-Attributes:
-
-- `status`: `int`
-- `description`: `str`
-
-They should be raised at `@app.before` or `@app.route` functions.
-
-### MultiDict
-
-_I wish you hadn't been born._
-
-#### class MultiDict(dict)
-
-Shares the same attributes as dict. Required because of HTTP 1.1 quirks. You should probably forget its existance.
-
-### `asyncfy(func, /, *args, **kwargs)`
-
-_Simply beautiful._
-
-The function that allows for synchronous code in µHTTP. As long as you use thread-safe code things should be ok. E.g. instead of opening one `sqlite3` connection at startup, consider opening one for every request or just using [`aiosqlite`](https://github.com/omnilib/aiosqlite).
-
-### More
-
-_Read the source code. It will cost you all of 5 minutes._
+Because of HTTP 1.1 quirks, µHTTP has a MultiDict implementation. But, you shouldn't really care about that.
 
 ## Contributing
 
@@ -372,7 +371,7 @@ Feel free to fork, complain, improve, document, fix typos...
 
 ## Tests
 
-Well, I don't really see a need for them. But, if you do, feel free to contribute.
+Well, I don't really see a need for them -- _arrogance meets laziness_. But, if you do, feel free to contribute.
 
 ## License
 

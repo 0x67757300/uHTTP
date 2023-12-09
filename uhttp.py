@@ -111,16 +111,23 @@ class Request:
         return f'{self.method} {self.path}'
 
 
-class Response:
+class Response(Exception):
     def __init__(self, status, *, headers=None, cookies=None, body=b''):
         self.status = status
+        try:
+            self.description = HTTPStatus(status).phrase
+        except ValueError:
+            self.description = ''
+        super().__init__(self.description)
         self.headers = MultiDict(headers)
         self.headers.setdefault('content-type', 'text/html; charset=utf-8')
         self.cookies = SimpleCookie(cookies)
         self.body = body
+        if not self.body and status in range(400, 600):
+            self.body = str(self).encode()
 
     def __repr__(self):
-        return str(self.status)
+        return f'{self.status} {self.description}'
 
     @classmethod
     def from_any(cls, any):
@@ -142,12 +149,6 @@ class Response:
             return cls(status=204)
         else:
             raise TypeError
-
-
-class HTTPException(Exception):
-    def __init__(self, status, description=''):
-        self.status = status
-        super().__init__(description or HTTPStatus(status).phrase)
 
 
 class App:
@@ -275,18 +276,18 @@ class App:
                         for k, v in scope['headers']
                     ])
                 except UnicodeDecodeError:
-                    raise HTTPException(400)
+                    raise Response(400)
 
                 try:
                     request.cookies.load(request.headers.get('cookie', ''))
                 except CookieError:
-                    raise HTTPException(400)
+                    raise Response(400)
 
                 while True:
                     event = await receive()
                     request.body += event['body']
                     if len(request.body) > self._max_content:
-                        raise HTTPException(413)
+                        raise Response(413)
                     if not event['more_body']:
                         break
 
@@ -297,44 +298,42 @@ class App:
                             json.loads, request.body.decode()
                         )
                     except (UnicodeDecodeError, json.JSONDecodeError):
-                        raise HTTPException(400)
+                        raise Response(400)
                 elif 'application/x-www-form-urlencoded' in content_type:
                     request.form = await to_thread(
                         parse_qs, unquote(request.body)
                     )
 
-                response = None
-
                 for func in self._before:
                     if ret := await asyncfy(func, request):
-                        response = Response.from_any(ret)
+                        raise Response.from_any(ret)
+
+                for route, methods in self._routes.items():
+                    if matches := route.fullmatch(request.path):
+                        request.params = matches.groupdict()
+                        if func := methods.get(request.method):
+                            ret = await asyncfy(func, request)
+                            response = Response.from_any(ret)
+                        else:
+                            response = Response(405)
+                            response.headers['allow'] = ', '.join(methods)
                         break
+                else:
+                    response = Response(404)
 
-                if not response:
-                    for route, methods in self._routes.items():
-                        if matches := route.fullmatch(request.path):
-                            request.params = matches.groupdict()
-                            if func := methods.get(request.method):
-                                ret = await asyncfy(func, request)
-                                response = Response.from_any(ret)
-                            else:
-                                response = Response.from_any(405)
-                                response.headers['allow'] = ', '.join(methods)
-                            break
-                    else:
-                        response = Response.from_any(404)
+            except Response as early_response:
+                response = early_response
 
-            except HTTPException as e:
-                response = Response(status=e.status, body=str(e).encode())
-
-            for func in self._after:
-                if ret := await asyncfy(func, request, response):
-                    response = Response.from_any(ret)
-                    break
+            try:
+                for func in self._after:
+                    if ret := await asyncfy(func, request, response):
+                        raise Response.from_any(ret)
+            except Response as late_response:
+                response = late_response
 
             response.headers._update({'content-length': [len(response.body)]})
             if response.cookies:
-                response.headers.update({
+                response.headers._update({
                     'set-cookie': [
                         header.split(': ', maxsplit=1)[1]
                         for header in response.cookies.output().splitlines()
