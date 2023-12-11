@@ -22,55 +22,58 @@ class MultiDict(dict):
         if mapping is None:
             super().__init__()
         elif isinstance(mapping, MultiDict):
-            super().__init__({k: v[:] for k, v in mapping.itemslist()})
+            super().__init__({k.lower(): v[:] for k, v in mapping.itemslist()})
         elif isinstance(mapping, dict):
             super().__init__({
-                k: [v] if not isinstance(v, list) else v[:]
+                k.lower(): [v] if not isinstance(v, list) else v[:]
                 for k, v in mapping.items()
             })
         elif isinstance(mapping, (tuple, list)):
             super().__init__()
             for key, value in mapping:
-                self._setdefault(key, []).append(value)
+                self._setdefault(key.lower(), []).append(value)
         else:
             raise TypeError('Invalid mapping type')
 
     def __getitem__(self, key):
-        return super().__getitem__(key)[-1]
+        return super().__getitem__(key.lower())[-1]
 
     def __setitem__(self, key, value):
-        super().setdefault(key, []).append(value)
+        super().setdefault(key.lower(), []).append(value)
 
     def _get(self, key, default=(None,)):
-        return super().get(key, list(default))
+        return super().get(key.lower(), list(default))
 
     def get(self, key, default=None):
-        return super().get(key, [default])[-1]
+        return super().get(key.lower(), [default])[-1]
 
     def _items(self):
         return super().items()
 
     def items(self):
-        return {k: v[-1] for k, v in super().items()}.items()
+        return {k.lower(): v[-1] for k, v in super().items()}.items()
 
     def _pop(self, key, default=(None,)):
-        return super().pop(key, list(default))
+        return super().pop(key.lower(), list(default))
 
     def pop(self, key, default=None):
-        values = super().get(key, [])
-        return values.pop() if len(values) > 1 else super().pop(key, default)
+        values = super().get(key.lower(), [])
+        if len(values) > 1:
+            return values.pop()
+        else:
+            return super().pop(key.lower(), default)
 
     def _setdefault(self, key, default=(None,)):
-        return super().setdefault(key, list(default))
+        return super().setdefault(key.lower(), list(default))
 
     def setdefault(self, key, default=None):
-        return super().setdefault(key, [default])[-1]
+        return super().setdefault(key.lower(), [default])[-1]
 
     def _values(self):
         return super().values()
 
     def values(self):
-        return {k: v[-1] for k, v in super().items()}.values()
+        return {k.lower(): v[-1] for k, v in super().items()}.values()
 
     def _update(self, *args, **kwargs):
         super().update(*args, **kwargs)
@@ -103,7 +106,7 @@ class Request:
         self.headers = MultiDict(headers)
         self.cookies = SimpleCookie(cookies)
         self.body = body
-        self.json = json or {}
+        self.json = json
         self.form = MultiDict(form)
         self.state = state or {}
 
@@ -266,7 +269,7 @@ class App:
                 method=scope['method'],
                 path=scope['path'],
                 args=parse_qs(unquote(scope['query_string'])),
-                state=scope['state'].copy()
+                state=scope['state']
             )
 
             try:
@@ -300,9 +303,9 @@ class App:
                     except (UnicodeDecodeError, json.JSONDecodeError):
                         raise Response(400)
                 elif 'application/x-www-form-urlencoded' in content_type:
-                    request.form = await to_thread(
+                    request.form = MultiDict(await to_thread(
                         parse_qs, unquote(request.body)
-                    )
+                    ))
 
                 for func in self._before:
                     if ret := await asyncfy(func, request):
@@ -328,8 +331,8 @@ class App:
                 for func in self._after:
                     if ret := await asyncfy(func, request, response):
                         raise Response.from_any(ret)
-            except Response as late_response:
-                response = late_response
+            except Response as early_response:
+                response = early_response
 
             response.headers._update({'content-length': [len(response.body)]})
             if response.cookies:
