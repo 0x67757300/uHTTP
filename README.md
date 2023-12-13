@@ -1,8 +1,8 @@
-# µHTTP 
+# µHTTP
 
 Pythonic web development
 
-µHTTP emerged from the need of a simple, hassle-free web framework. It's great for microservices, single page applications, AND monolithic monsters. 
+µHTTP emerged from the need of a simple web framework. It's great for microservices, single page applications, AND monolithic monsters.
 
 In µHTTP there is no hidden logic. Everything is what it seems.
 
@@ -12,8 +12,9 @@ In µHTTP there is no hidden logic. Everything is what it seems.
 - Extremely modular, entire extensions can just follow the simple App pattern.
 - Flexible, say what you will about wrong responses, they work.
 - Fast, because it doesn't really do much.
-- **Very** opinionated, to the point where it has no opinions.
-- Not typist.
+- Great learning device.
+- No opinions, too stupid for that.
+- Not about types.
 
 ### Installation
 
@@ -62,7 +63,7 @@ if __name__ == '__main__':
 
 ### TODO
 
-- [ ] Tests
+- [x] Tests
 - [ ] Multipart requests
 - [ ] Tutorial
 
@@ -216,7 +217,7 @@ To improve performance, all path regular expressions are compiled at startup.
 
 Route functions will only be called if no `@app.before` middleware has set the response.
 
-The response comes from the return value of the decorated function. If there is no return, the response defaults to `204 No Content`. The return values can be: `int` (status), `str` (body), `bytes` (raw body), `dict` (JSON) and `Response`. 
+The response comes from the return value of the decorated function. If there is no return, the response defaults to `204 No Content`. The return values can be: `int` (status), `str` (body), `bytes` (raw body), `dict` (JSON) and `Response`.
 
 If the request doesn't match any path, response is set to `404 Not Found`. If the request doesn't match any method of the path, response is set to `405 Method Not Allowed`.
 

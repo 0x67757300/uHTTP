@@ -11,6 +11,9 @@ keywords = ["asgi", "web", "http"]
 [tool.poetry.dependencies]
 python = "^3.9"
 
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = ["tests.py"]
 
 [build-system]
 requires = ["poetry-core"]
