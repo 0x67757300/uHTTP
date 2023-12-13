@@ -1,4 +1,4 @@
-"""µHTTP - ASGI micro framework"""
+"""µHTTP - Pythonic web development"""
 
 import re
 import json
@@ -7,19 +7,63 @@ from http.cookies import SimpleCookie, CookieError
 from urllib.parse import parse_qs, unquote
 from asyncio import to_thread
 from inspect import iscoroutinefunction
+from typing import Any, Callable, Iterable, Optional, Union
 
 
 class App:
+    """An ASGI application.
+
+    Called once per request by the ASGI server.
+
+    Currently, doesn't support the WebSocket protocol. However, adding
+    support is easy:
+
+    ```python
+    _app = App()
+
+    async def app(scope, receive, send):
+        if scope['type'] == 'websocket':
+            pass  # WebSocket code goes here
+        else:
+            await _app(scope, receive, send)
+    ```
+    """
+
     def __init__(
         self,
         *,
-        routes=None,
-        startup=None,
-        shutdown=None,
-        before=None,
-        after=None,
-        max_content=1048576
+        routes: Optional[
+            dict[str, dict[str, Callable[['Request'], Any]]]
+        ] = None,
+        startup: Optional[list[Callable[[dict], Any]]] = None,
+        shutdown: Optional[list[Callable[[dict], Any]]] = None,
+        before: Optional[list[Callable[['Request'], Any]]] = None,
+        after: Optional[list[Callable[['Request', 'Response'], Any]]] = None,
+        max_content: int = 1048576
     ):
+        """Initializes an App.
+
+        E.g.:
+
+        ```python
+        app = App(
+            startup=[open_db],
+            before=[counter, auth],
+            routes={
+                '/': {
+                    'GET': lambda request: 'HI!',
+                    'POST': new
+                },
+                '/users/': {
+                    'GET': users,
+                    'PUT': users
+                }
+            },
+            after=[logger],
+            shutdown=[close_db]
+        )
+        ```
+        """
         self._routes = routes or {}
         self._startup = startup or []
         self._shutdown = shutdown or []
@@ -27,7 +71,8 @@ class App:
         self._after = after or []
         self._max_content = max_content
 
-    def mount(self, app, prefix=''):
+    def mount(self, app: 'App', prefix: str = ''):
+        """Mounts another app."""
         self._startup += app._startup
         self._shutdown += app._shutdown
         self._before += app._before
@@ -35,23 +80,104 @@ class App:
         self._routes.update({prefix + k: v for k, v in app._routes.items()})
         self._max_content = max(self._max_content, app._max_content)
 
-    def startup(self, func):
+    def startup(self, func: Callable[[dict], Any]):
+        """A startup decorator.
+
+        Appends the decorated function to the list of startup functions.
+        These functions are called at the beginning of the Lifespan
+        protocol (when you start the server) with the state argument. A
+        shallow copy of state is passed to each request.
+
+        E.g.:
+
+        ```python
+        @app.startup
+        def open_db(state):
+            state['db'] = {}
+        ```
+        """
         self._startup.append(func)
         return func
 
-    def shutdown(self, func):
+    def shutdown(self, func: Callable[[dict], Any]):
+        """A shutdown decorator.
+
+        Appends the decorated function to the list of shutdown
+        functions. These functions are called at the end of the Lifespan
+        protocol (when you stop the server) with the state argument.
+
+        E.g.:
+
+        ```python
+        @app.shutdown
+        def close_db(state):
+            del state['db']
+        ```
+        """
         self._shutdown.append(func)
         return func
 
-    def before(self, func):
+    def before(self, func: Callable[['Request'], Any]):
+        """A before decorator.
+
+        Appends the decorated function to the list of before functions.
+        These functions are called before a response is made with a
+        request argument. In particular, `request.params` might be empty
+        at this point.
+
+        E.g.:
+
+        ```python
+        @app.before
+        def auth(request):
+            if 'john' not in request.state['db']:
+                raise Response(401)
+        ```
+        """
         self._before.append(func)
         return func
 
-    def after(self, func):
+    def after(self, func: Callable[['Request', 'Response'], Any]):
+        """An after decorator.
+
+        Appends the decorated function to the list of after functions.
+        These functions are called after a response is made with
+        request and response arguments.
+
+        E.g.:
+
+        ```python
+        @app.after
+        def logger(request, response):
+            print(request, '-->', response)
+        ```
+        """
         self._after.append(func)
         return func
 
-    def route(self, path, methods=('GET',)):
+    def route(self, path: str, methods: Iterable[str] = ('GET',)):
+        """A route decorator.
+
+        Adds the decorated function to the routing table.
+
+        The path is treated as a regular expression. To get request
+        parameters (e.g. `/user/<id>`) you should use named groups. All
+        paths are compiled at the startup for performance reasons.
+
+        If the request path doesn't match a `404 Not Found` response is
+        returned.
+
+        If the request method isn't in methods a `405 Method Not
+        Allowed` response is returned.
+
+        E.g.:
+
+        ```python
+        @app.route('/', methods=('GET', 'POST'))
+        def index(request):
+            return f'{request.method}ing from {request.client.ip}'
+        ```
+        """
         def decorator(func):
             self._routes.setdefault(path, {}).update({
                 method: func for method in methods
@@ -59,34 +185,43 @@ class App:
             return func
         return decorator
 
-    def get(self, path):
+    def get(self, path: str):
+        """A `GET` route."""
         return self.route(path, methods=('GET',))
 
-    def head(self, path):
+    def head(self, path: str):
+        """A `HEAD` route."""
         return self.route(path, methods=('HEAD',))
 
-    def post(self, path):
+    def post(self, path: str):
+        """A `POST` route."""
         return self.route(path, methods=('POST',))
 
-    def put(self, path):
+    def put(self, path: str):
+        """A `PUT` route."""
         return self.route(path, methods=('PUT',))
 
-    def delete(self, path):
+    def delete(self, path: str):
+        """A `DELETE` route."""
         return self.route(path, methods=('DELETE',))
 
-    def connect(self, path):
+    def connect(self, path: str):
+        """A `CONNECT` route."""
         return self.route(path, methods=('CONNECT',))
 
-    def options(self, path):
+    def options(self, path: str):
+        """An `OPTIONS` route."""
         return self.route(path, methods=('OPTIONS',))
 
-    def trace(self, path):
+    def trace(self, path: str):
+        """A `TRACE` route."""
         return self.route(path, methods=('TRACE',))
 
-    def patch(self, path):
+    def patch(self, path: str):
+        """A `PATCH` route."""
         return self.route(path, methods=('PATCH',))
 
-    async def __call__(self, scope, receive, send):
+    async def __call__(self, scope: dict, receive: Callable, send: Callable):
         state = scope.get('state', {})
 
         if scope['type'] == 'lifespan':
@@ -217,19 +352,31 @@ class App:
 
 
 class Request:
+    """A HTTP request."""
+    method: str
+    path: str
+    params: dict[str, str]
+    args: 'MultiDict'
+    headers: 'MultiDict'
+    cookies: SimpleCookie
+    body: bytes
+    json: Any
+    form: 'MultiDict'
+    state: dict
+
     def __init__(
         self,
-        method,
-        path,
+        method: str,
+        path: str,
         *,
-        params=None,
-        args=None,
-        headers=None,
-        cookies=None,
-        body=b'',
-        json=None,
-        form=None,
-        state=None
+        params: Optional[dict] = None,
+        args: Optional[Union['MultiDict', dict, list]] = None,
+        headers: Optional[Union['MultiDict', dict, list]] = None,
+        cookies: Optional[dict] = None,
+        body: bytes = b'',
+        json: Optional[Any] = None,
+        form: Optional[Union['MultiDict', dict, list]] = None,
+        state: Optional[dict] = None
     ):
         self.method = method
         self.path = path
@@ -247,7 +394,38 @@ class Request:
 
 
 class Response(Exception):
-    def __init__(self, status, *, headers=None, cookies=None, body=b''):
+    """A HTTP Response.
+
+    They can be raised at any point for the early response pattern.
+
+    E.g.
+
+    ```python
+    def user(db, user):
+        if user in db:
+            return db.get(user)
+        else:
+            raise Response(401)
+
+    @app.get('/account')
+    def account(request):
+        user = user(request.state['db'], 'john')
+    ```
+    """
+    status: int
+    description: str
+    headers: 'MultiDict'
+    cookies: SimpleCookie
+    body: bytes
+
+    def __init__(
+        self,
+        status: int,
+        *,
+        headers: Optional[Union['MultiDict', dict, list]] = None,
+        cookies: Optional[dict] = None,
+        body: bytes = b''
+    ):
         self.status = status
         try:
             self.description = HTTPStatus(status).phrase
@@ -265,7 +443,7 @@ class Response(Exception):
         return f'{self.status} {self.description}'
 
     @classmethod
-    def from_any(cls, any):
+    def from_any(cls, any: Any) -> 'Response':
         if isinstance(any, int):
             return cls(status=any, body=HTTPStatus(any).phrase.encode())
         elif isinstance(any, str):
@@ -287,6 +465,14 @@ class Response(Exception):
 
 
 async def asyncfy(func, /, *args, **kwargs):
+    """Makes any function awaitable.
+
+    All synchronous code runs in a separate thread, so as to not block
+    the main loop. As long as your code is thread-safe, things should
+    be fine. E.g. instead of opening one `sqlite3` connection at
+    startup, consider opening one for every request or just using
+    `aiosqlite`.
+    """
     if iscoroutinefunction(func):
         return await func(*args, **kwargs)
     else:
@@ -294,6 +480,7 @@ async def asyncfy(func, /, *args, **kwargs):
 
 
 class MultiDict(dict):
+    """A dictionary with multiple values for the same key."""
     def __init__(self, mapping=None):
         if mapping is None:
             super().__init__()
