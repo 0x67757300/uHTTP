@@ -51,7 +51,7 @@ if __name__ == '__main__':
 
 Personally, I recommend that you just read the source code.
 
-However, an auto-generated reference can be found [here](https://0x67757300.github.io/uHTTP/docs/uhttp.html).
+However, an auto-generated reference can be found [here](https://0x67757300.github.io/uHTTP/uhttp.html).
 
 ### Tutorial
 
