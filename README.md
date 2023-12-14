@@ -51,8 +51,24 @@ if __name__ == '__main__':
 
 ### API Reference
 
-[The documentation.](https://0x67757300.github.io/uHTTP/uhttp.html)
+[Here.](https://0x67757300.github.io/uHTTP/uhttp.html)
 
 ### Tutorial
 
 _Coming soon..._
+
+### Extensions
+
+µHTTP doesn't come with bells and whistles.
+
+If you want more, search for [µHTTP extensions](https://github.com/topics/uhttp).
+
+If what you want isn't available, consider writing your own extension.
+
+### Contributing
+
+All contributions are welcome.
+
+### License
+
+Released under the MIT license.
