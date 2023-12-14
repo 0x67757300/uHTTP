@@ -41,7 +41,7 @@ app = App()
 
 @app.get('/')
 def hello(request):
-    return 'Hello, world!'
+    return f'Hello, {request.ip or "World"}!'
 
 
 if __name__ == '__main__':

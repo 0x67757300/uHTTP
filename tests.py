@@ -310,3 +310,23 @@ async def test_late_early_response():
     assert response['status'] == 200
     assert response['body'] == b'Am I early?'
     assert response['headers'].get('content-length') == '11'
+
+
+async def test_app_mount():
+    app1 = App()
+    app2 = App()
+
+    @app1.route('/')
+    def app1_index(request):
+        pass
+
+    @app2.route('/')
+    def app2_index(request):
+        pass
+
+    app2.mount(app1, '/app1')
+
+    assert app2._routes == {
+        '/': {'GET': app2_index},
+        '/app1/': {'GET': app1_index}
+    }

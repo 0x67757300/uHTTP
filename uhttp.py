@@ -61,7 +61,64 @@ class App:
         self._max_content = max_content
 
     def mount(self, app, prefix=''):
-        """Mounts another app."""
+        """Mounts another app.
+
+        The lifespan and middleware functions are appended. The routes
+        are set at the prefix. The max_content is a max between both
+        app's.
+
+        E.g.:
+
+        In `db.py`:
+
+        ```python
+        from uhttp import App
+
+        app = App()
+
+        @app.startup
+        def open_db(state):
+            ...
+
+        @app.shutdown
+        def close_db(state):
+            ...
+        ```
+
+        In `users.py`:
+
+        ```python
+        from uhttp import App
+        import db
+
+        app = App()
+        app.mount(db.app)
+
+        @app.before
+        def auth(request):
+            if request.headers.get('from') not in request.state['db']:
+                raise Response(401)
+
+
+        @app.route('/')
+        def profile(request):
+            ...
+        ```
+
+        In `main.py`:
+
+        ```python
+        from uhttp import App
+        import users
+
+        app = App()
+        app.mount(users.app, '/users')
+
+        @app.route('/')
+        def index(request):
+            ...
+        ```
+        """
         self._startup += app._startup
         self._shutdown += app._shutdown
         self._before += app._before
@@ -150,8 +207,11 @@ class App:
         Adds the decorated function to the routing table.
 
         The path is treated as a regular expression. To get request
-        parameters (e.g. `/user/<id>`) you should use named groups. All
-        paths are compiled at the startup for performance reasons.
+        parameters (e.g. `/user/<id>`) you should use named groups.
+
+        All paths are compiled at the startup for performance reasons.
+        If you must change the paths dynamically, then you will also
+        need to compile any new paths.
 
         If the request path doesn't match a `404 Not Found` response is
         returned.
@@ -249,6 +309,7 @@ class App:
             request = Request(
                 method=scope['method'],
                 path=scope['path'],
+                ip=scope.get('client', ('', 0))[0],
                 args=parse_qs(unquote(scope['query_string'])),
                 state=state.copy()
             )
@@ -283,9 +344,9 @@ class App:
                     except (UnicodeDecodeError, json.JSONDecodeError):
                         raise Response(400)
                 elif 'application/x-www-form-urlencoded' in content_type:
-                    request.form = MultiDict(await to_thread(
-                        parse_qs, unquote(request.body)
-                    ))
+                    request.form = MultiDict(
+                        await to_thread(parse_qs, unquote(request.body))
+                    )
 
                 for func in self._before:
                     if ret := await asyncfy(func, request):
@@ -315,13 +376,12 @@ class App:
                 response = early_response
 
             response.headers._update({'content-length': [len(response.body)]})
-            if response.cookies:
-                response.headers._update({
-                    'set-cookie': [
-                        header.split(': ', maxsplit=1)[1]
-                        for header in response.cookies.output().splitlines()
-                    ]
-                })
+            response.headers._update({
+                'set-cookie': [
+                    header.split(': ', maxsplit=1)[1]
+                    for header in response.cookies.output().splitlines()
+                ]
+            })
 
             await send({
                 'type': 'http.response.start',
@@ -348,6 +408,7 @@ class Request:
         method,
         path,
         *,
+        ip='',
         params=None,
         args=None,
         headers=None,
@@ -358,15 +419,36 @@ class Request:
         state=None
     ):
         self.method = method
+        """The HTTP method name, uppercased."""
         self.path = path
+        """HTTP request target excluding any query string, with
+        percent-encoded sequences and UTF-8 byte sequences decoded into
+        characters.
+        """
+        self.ip = ip
+        """The client's IPv4 or IPv6 address."""
         self.params = params or {}
+        """The request path parameters.
+
+        Derived from named groups in the route's path RegEx.
+        """
         self.args = MultiDict(args)
+        """The request query string (portion after "?") arguments."""
         self.headers = MultiDict(headers)
+        """The request HTTP headers."""
         self.cookies = SimpleCookie(cookies)
+        """Cookies from the `Cookie` header in the request."""
         self.body = body
+        """The raw request body in bytes."""
         self.json = json
+        """The request body parsed to JSON."""
         self.form = MultiDict(form)
+        """The request body parsed to form."""
         self.state = state or {}
+        """The request state.
+
+        Usually, a shallow copy from the App's state.
+        """
 
     def __repr__(self):
         return f'{self.method} {self.path}'
@@ -401,15 +483,30 @@ class Response(Exception):
         body=b''
     ):
         self.status = status
+        """The HTTP status code."""
         try:
             self.description = HTTPStatus(status).phrase
         except ValueError:
             self.description = ''
         super().__init__(self.description)
         self.headers = MultiDict(headers)
+        """The response headers.
+
+        If `Content-Type` is not specified, the default is
+        `text/html; charset=utf-8`.
+        """
         self.headers.setdefault('content-type', 'text/html; charset=utf-8')
         self.cookies = SimpleCookie(cookies)
+        """The response Cookies.
+
+        Later converted to the `Set-Cookie` header.
+        """
         self.body = body
+        """The response raw body in bytes.
+
+        If no response body is provided, and an error status code is
+        provided, the body is set to the status code's description.
+        """
         if not self.body and status in range(400, 600):
             self.body = str(self).encode()
 
@@ -418,6 +515,17 @@ class Response(Exception):
 
     @classmethod
     def from_any(cls, any):
+        """Returns a Response from a sensible input.
+
+        Mostly for internal use. Particularly, any value returned from a
+        route or middleware function is converted to a Response here.
+
+        E.g.:
+
+        ```python
+        response = Response.from_any({'hello': 'world'})
+        ```
+        """
         if isinstance(any, int):
             return cls(status=any, body=HTTPStatus(any).phrase.encode())
         elif isinstance(any, str):
@@ -454,7 +562,10 @@ async def asyncfy(func, /, *args, **kwargs):
 
 
 class MultiDict(dict):
-    """A dictionary with multiple values for the same key."""
+    """A dictionary with multiple values for the same key.
+
+    In this implementation, keys are case-insensitve.
+    """
     def __init__(self, mapping=None):
         if mapping is None:
             super().__init__()
