@@ -51,9 +51,7 @@ if __name__ == '__main__':
 
 ### API Reference
 
-An auto-generated reference can be found [here](https://0x67757300.github.io/uHTTP/uhttp.html).
-
-Also, consider reading the source code, it should take all of 5 minutes.
+[The documentation.](https://0x67757300.github.io/uHTTP/uhttp.html)
 
 ### Tutorial
 
