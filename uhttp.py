@@ -14,19 +14,6 @@ class App:
     """An ASGI application.
 
     Called once per request by the ASGI server.
-
-    Currently, doesn't support the WebSocket protocol. However, adding
-    support is easy:
-
-    ```python
-    _app = App()
-
-    async def app(scope, receive, send):
-        if scope['type'] == 'websocket':
-            pass  # WebSocket code goes here
-        else:
-            await _app(scope, receive, send)
-    ```
     """
 
     def __init__(
@@ -352,7 +339,7 @@ class App:
 
 
 class Request:
-    """A HTTP request."""
+    """An HTTP request."""
     method: str
     path: str
     params: dict[str, str]
@@ -394,7 +381,7 @@ class Request:
 
 
 class Response(Exception):
-    """A HTTP Response.
+    """An HTTP Response.
 
     They can be raised at any point for the early response pattern.
 
@@ -467,7 +454,7 @@ class Response(Exception):
 async def asyncfy(func, /, *args, **kwargs):
     """Makes any function awaitable.
 
-    All synchronous code runs in a separate thread, so as to not block
+    All synchronous code runs in a separate thread, so as not to block
     the main loop. As long as your code is thread-safe, things should
     be fine. E.g. instead of opening one `sqlite3` connection at
     startup, consider opening one for every request or just using

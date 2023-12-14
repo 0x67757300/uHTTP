@@ -6,9 +6,9 @@ _In µHTTP there is no hidden logic. Everything is what it seems._
 
 ### Why
 
-- Stupid simple, seriously there are maybe 15 lines of "real" code in it. No external dependencies.
+- Stupid simple, seriously there are maybe 15 lines of "real" code in it. _No external dependencies._
 - Extremely modular, entire extensions can just follow the simple App pattern.
-- Very flexible, `Response(Exception)`.
+- Very flexible, because of decisions like being able to raise Responses.
 - Quite fast, because it doesn't do much.
 - Great learning device.
 
@@ -49,10 +49,10 @@ if __name__ == '__main__':
 
 ### API Reference
 
-Personally, I recommend that you just read the source code.
+An auto-generated reference can be found [here](https://0x67757300.github.io/uHTTP/uhttp.html).
 
-However, an auto-generated reference can be found [here](https://0x67757300.github.io/uHTTP/uhttp.html).
+Also, consider reading the source code, it should take all of 5 minutes.
 
 ### Tutorial
 
-Coming soon...
+_Coming soon..._
