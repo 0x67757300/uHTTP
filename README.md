@@ -1,16 +1,18 @@
 # µHTTP - Pythonic web development
 
-µHTTP emerged from the need of a **simple** web framework. It's great for micro-services, single page applications, AND monolithic monsters.
+µHTTP emerged from the need of a **simple** web framework. It's great for micro-services, small applications, AND monolithic monsters.
 
 _In µHTTP there is no hidden logic. Everything is what it seems._
 
 ### Why
 
-- Stupid simple, seriously there are maybe 15 lines of "real" code in it. _No external dependencies._
+- Stupid simple, seriously, there are maybe 15 lines of "real" code in it. _No external dependencies._
 - Extremely modular, entire extensions can just follow the simple App pattern.
 - Very flexible, because of decisions like being able to raise Responses.
 - Quite fast, because it doesn't do much.
 - Great learning device.
+
+[The rant.](https://lobste.rs/s/ukh5id/uhttp_pythonic_web_development#c_9jln1d)
 
 ### Installation
 

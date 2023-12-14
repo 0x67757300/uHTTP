@@ -7,7 +7,6 @@ from http.cookies import SimpleCookie, CookieError
 from urllib.parse import parse_qs, unquote
 from asyncio import to_thread
 from inspect import iscoroutinefunction
-from typing import Any, Callable, Iterable, Optional, Union
 
 
 class App:
@@ -19,16 +18,19 @@ class App:
     def __init__(
         self,
         *,
-        routes: Optional[
-            dict[str, dict[str, Callable[['Request'], Any]]]
-        ] = None,
-        startup: Optional[list[Callable[[dict], Any]]] = None,
-        shutdown: Optional[list[Callable[[dict], Any]]] = None,
-        before: Optional[list[Callable[['Request'], Any]]] = None,
-        after: Optional[list[Callable[['Request', 'Response'], Any]]] = None,
-        max_content: int = 1048576
+        routes=None,
+        startup=None,
+        shutdown=None,
+        before=None,
+        after=None,
+        max_content=1048576
     ):
         """Initializes an App.
+
+        - routes must follow: `{'PATH': {'METHOD': FUNC}}`.
+        - startup, shutdown, before and after must be a list of funcs.
+        - max_content is the maximum size allowed, in bytes, of a
+        request body. Defaults to 1 MB.
 
         E.g.:
 
@@ -58,7 +60,7 @@ class App:
         self._after = after or []
         self._max_content = max_content
 
-    def mount(self, app: 'App', prefix: str = ''):
+    def mount(self, app, prefix=''):
         """Mounts another app."""
         self._startup += app._startup
         self._shutdown += app._shutdown
@@ -67,7 +69,7 @@ class App:
         self._routes.update({prefix + k: v for k, v in app._routes.items()})
         self._max_content = max(self._max_content, app._max_content)
 
-    def startup(self, func: Callable[[dict], Any]):
+    def startup(self, func):
         """A startup decorator.
 
         Appends the decorated function to the list of startup functions.
@@ -86,7 +88,7 @@ class App:
         self._startup.append(func)
         return func
 
-    def shutdown(self, func: Callable[[dict], Any]):
+    def shutdown(self, func):
         """A shutdown decorator.
 
         Appends the decorated function to the list of shutdown
@@ -104,7 +106,7 @@ class App:
         self._shutdown.append(func)
         return func
 
-    def before(self, func: Callable[['Request'], Any]):
+    def before(self, func):
         """A before decorator.
 
         Appends the decorated function to the list of before functions.
@@ -124,7 +126,7 @@ class App:
         self._before.append(func)
         return func
 
-    def after(self, func: Callable[['Request', 'Response'], Any]):
+    def after(self, func):
         """An after decorator.
 
         Appends the decorated function to the list of after functions.
@@ -142,7 +144,7 @@ class App:
         self._after.append(func)
         return func
 
-    def route(self, path: str, methods: Iterable[str] = ('GET',)):
+    def route(self, path, methods=('GET',)):
         """A route decorator.
 
         Adds the decorated function to the routing table.
@@ -172,43 +174,43 @@ class App:
             return func
         return decorator
 
-    def get(self, path: str):
+    def get(self, path):
         """A `GET` route."""
         return self.route(path, methods=('GET',))
 
-    def head(self, path: str):
+    def head(self, path):
         """A `HEAD` route."""
         return self.route(path, methods=('HEAD',))
 
-    def post(self, path: str):
+    def post(self, path):
         """A `POST` route."""
         return self.route(path, methods=('POST',))
 
-    def put(self, path: str):
+    def put(self, path):
         """A `PUT` route."""
         return self.route(path, methods=('PUT',))
 
-    def delete(self, path: str):
+    def delete(self, path):
         """A `DELETE` route."""
         return self.route(path, methods=('DELETE',))
 
-    def connect(self, path: str):
+    def connect(self, path):
         """A `CONNECT` route."""
         return self.route(path, methods=('CONNECT',))
 
-    def options(self, path: str):
+    def options(self, path):
         """An `OPTIONS` route."""
         return self.route(path, methods=('OPTIONS',))
 
-    def trace(self, path: str):
+    def trace(self, path):
         """A `TRACE` route."""
         return self.route(path, methods=('TRACE',))
 
-    def patch(self, path: str):
+    def patch(self, path):
         """A `PATCH` route."""
         return self.route(path, methods=('PATCH',))
 
-    async def __call__(self, scope: dict, receive: Callable, send: Callable):
+    async def __call__(self, scope, receive, send):
         state = scope.get('state', {})
 
         if scope['type'] == 'lifespan':
@@ -340,30 +342,20 @@ class App:
 
 class Request:
     """An HTTP request."""
-    method: str
-    path: str
-    params: dict[str, str]
-    args: 'MultiDict'
-    headers: 'MultiDict'
-    cookies: SimpleCookie
-    body: bytes
-    json: Any
-    form: 'MultiDict'
-    state: dict
 
     def __init__(
         self,
-        method: str,
-        path: str,
+        method,
+        path,
         *,
-        params: Optional[dict] = None,
-        args: Optional[Union['MultiDict', dict, list]] = None,
-        headers: Optional[Union['MultiDict', dict, list]] = None,
-        cookies: Optional[dict] = None,
-        body: bytes = b'',
-        json: Optional[Any] = None,
-        form: Optional[Union['MultiDict', dict, list]] = None,
-        state: Optional[dict] = None
+        params=None,
+        args=None,
+        headers=None,
+        cookies=None,
+        body=b'',
+        json=None,
+        form=None,
+        state=None
     ):
         self.method = method
         self.path = path
@@ -399,19 +391,14 @@ class Response(Exception):
         user = user(request.state['db'], 'john')
     ```
     """
-    status: int
-    description: str
-    headers: 'MultiDict'
-    cookies: SimpleCookie
-    body: bytes
 
     def __init__(
         self,
-        status: int,
+        status,
         *,
-        headers: Optional[Union['MultiDict', dict, list]] = None,
-        cookies: Optional[dict] = None,
-        body: bytes = b''
+        headers=None,
+        cookies=None,
+        body=b''
     ):
         self.status = status
         try:
@@ -430,7 +417,7 @@ class Response(Exception):
         return f'{self.status} {self.description}'
 
     @classmethod
-    def from_any(cls, any: Any) -> 'Response':
+    def from_any(cls, any):
         if isinstance(any, int):
             return cls(status=any, body=HTTPStatus(any).phrase.encode())
         elif isinstance(any, str):
