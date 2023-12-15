@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "uHTTP"
-version = "1.3.2"
-description = "Pythonic web development"
+version = "1.3.3"
+description = "Stupid web development"
 authors = ["gus <0x67757300@gmail.com>"]
 license = "MIT"
 readme = "README.md"

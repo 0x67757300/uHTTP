@@ -1,4 +1,4 @@
-"""µHTTP - Pythonic web development"""
+"""µHTTP - Stupid web development"""
 
 import re
 import json
