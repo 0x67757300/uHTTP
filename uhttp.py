@@ -1,4 +1,4 @@
-"""µHTTP - Stupid web development"""
+"""µHTTP - ASGI micro framework"""
 
 import re
 import json
