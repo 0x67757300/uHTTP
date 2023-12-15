@@ -375,7 +375,7 @@ class App:
             except Response as early_response:
                 response = early_response
 
-            response.headers._update({'content-length': [len(response.body)]})
+            response.headers.setdefault('content-length', len(response.body))
             response.headers._update({
                 'set-cookie': [
                     header.split(': ', maxsplit=1)[1]
