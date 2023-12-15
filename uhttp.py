@@ -65,7 +65,7 @@ class App:
 
         The lifespan and middleware functions are appended. The routes
         are set at the prefix. The max_content is a max between both
-        app's.
+        apps.
 
         E.g.:
 
@@ -98,7 +98,6 @@ class App:
         def auth(request):
             if request.headers.get('from') not in request.state['db']:
                 raise Response(401)
-
 
         @app.route('/')
         def profile(request):
