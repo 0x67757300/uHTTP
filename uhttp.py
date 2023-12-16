@@ -28,7 +28,8 @@ class App:
         """Initializes an App.
 
         - routes must follow: `{'PATH': {'METHOD': FUNC}}`.
-        - startup, shutdown, before and after must be a list of funcs.
+        - startup, shutdown, before and after must be a list of
+        callables.
         - max_content is the maximum size allowed, in bytes, of a
         request body. Defaults to 1 MB.
 
@@ -77,11 +78,11 @@ class App:
         app = App()
 
         @app.startup
-        def open_db(state):
+        async open_db(state):
             ...
 
         @app.shutdown
-        def close_db(state):
+        async close_db(state):
             ...
         ```
 
@@ -189,6 +190,10 @@ class App:
         These functions are called after a response is made with
         request and response arguments.
 
+        Ideally, no response should be raised or returned here, only
+        modified. Doing this will ensure expected behavior from other
+        mounted apps/extensions.
+
         E.g.:
 
         ```python
@@ -212,10 +217,12 @@ class App:
         If you must change the paths dynamically, then you will also
         need to compile any new paths.
 
-        If the request path doesn't match a `404 Not Found` response is
+        The methods must be a iterable of upper cased str HTTP methods.
+
+        If the request path doesn't match, a `404 Not Found` response is
         returned.
 
-        If the request method isn't in methods a `405 Method Not
+        If the request method isn't in methods, a `405 Method Not
         Allowed` response is returned.
 
         E.g.:
@@ -343,9 +350,9 @@ class App:
                     except (UnicodeDecodeError, json.JSONDecodeError):
                         raise Response(400)
                 elif 'application/x-www-form-urlencoded' in content_type:
-                    request.form = MultiDict(
-                        await to_thread(parse_qs, unquote(request.body))
-                    )
+                    request.form = MultiDict(await to_thread(
+                        parse_qs, unquote(request.body)
+                    ))
 
                 for func in self._before:
                     if ret := await asyncfy(func, request):
@@ -429,7 +436,7 @@ class Request:
         self.params = params or {}
         """The request path parameters.
 
-        Derived from named groups in the route's path RegEx.
+        Derived from named groups in the route's path pattern.
         """
         self.args = MultiDict(args)
         """The request query string (portion after "?") arguments."""
@@ -456,7 +463,7 @@ class Request:
 class Response(Exception):
     """An HTTP Response.
 
-    They can be raised at any point for the early response pattern.
+    It can be raised at any point for the early response pattern.
 
     E.g.
 
@@ -491,8 +498,8 @@ class Response(Exception):
         self.headers = MultiDict(headers)
         """The response headers.
 
-        If `Content-Type` is not specified, the default is
-        `text/html; charset=utf-8`.
+        If `Content-Type` is not specified, defaults to `text/html;
+        charset=utf-8`.
         """
         self.headers.setdefault('content-type', 'text/html; charset=utf-8')
         self.cookies = SimpleCookie(cookies)

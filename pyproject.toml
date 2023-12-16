@@ -1,12 +1,12 @@
 [tool.poetry]
 name = "uHTTP"
-version = "1.3.3"
+version = "1.3.4"
 description = "Stupid web development"
 authors = ["gus <0x67757300@gmail.com>"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/0x67757300/uHTTP"
-documentation = "https://0x67757300.github.io/uHTTP/uhttp.html"
+documentation = "https://0x67757300.github.io/uHTTP"
 keywords = ["asgi", "web", "http"]
 
 [tool.poetry.dependencies]

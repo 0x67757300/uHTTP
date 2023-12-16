@@ -43,14 +43,6 @@ if __name__ == '__main__':
     uvicorn.run('__main__:app')
 ```
 
-### Documentation
-
-First, read the [tutorial](https://github.com/0x67757300/uHTTP-Tutorial). It'll show you how to write and deploy a link aggregation platform (read: Hacker News clone).
-
-Then, take look at the [API reference](https://0x67757300.github.io/uHTTP/uhttp.html).
-
-Finally, enjoy the source code. ;)
-
 ### Extensions
 
 _µHTTP doesn't come with bells and whistles._
