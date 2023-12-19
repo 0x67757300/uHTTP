@@ -1,12 +1,12 @@
 """µHTTP - ASGI micro framework"""
 
-import re
-import json
-from http import HTTPStatus
-from http.cookies import SimpleCookie, CookieError
-from urllib.parse import parse_qs, unquote
 from asyncio import to_thread
+from http import HTTPStatus
+from http.cookies import CookieError, SimpleCookie
 from inspect import iscoroutinefunction
+import json
+import re
+from urllib.parse import parse_qs, unquote
 
 
 class App:
