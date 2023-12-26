@@ -10,6 +10,7 @@ _In µHTTP there is no hidden logic. Everything is what it seems._
 - Extremely modular, entire extensions can just follow the simple App pattern.
 - Very flexible, you can even raise responses.
 - Quite fast, because size matters.
+- Safe, due to its small attack surface.
 - Great learning device.
 
 [The rant.](https://lobste.rs/s/ukh5id/uhttp_pythonic_web_development#c_9jln1d)
@@ -40,7 +41,7 @@ def hello(request):
     return f'Hello, {request.ip}!'
 ```
 
-### Complete Example
+### Example
 
 ```python
 #!/usr/bin/env python3
