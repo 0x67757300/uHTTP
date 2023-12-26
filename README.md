@@ -2,6 +2,8 @@
 
 µHTTP emerged from the need of a simple web framework. It's great for micro-services, small applications, AND monolithic monsters.
 
+_In µHTTP there is no hidden logic. Everything is what it seems._
+
 ### Why
 
 - Stupid simple, seriously, there are maybe 15 lines of "real" code in it. _No external dependencies._
@@ -36,12 +38,88 @@ app = App()
 @app.get('/')
 def hello(request):
     return f'Hello, {request.ip}!'
+```
+
+### Complete Example
+
+```python
+#!/usr/bin/env python3
+
+from uhttp import App, Response
+
+
+app = App()
+
+
+@app.startup
+def open_db(state):
+    state['db'] = [
+        {
+            'title': 'How to Ride a Unicorn',
+            'author': 'admin'
+        },
+        {
+            'title': 'Yummy Vanilla Bread Recipe',
+            'author': 'joe'
+        }
+    ]
+
+
+@app.before
+def incoming(request):
+    print(f'Incoming request from {request.ip}')
+
+
+@app.get('/')
+def all_posts(request):
+    return {'posts': request.state['db']}
+
+
+@app.get(r'/(?P<author>\w+)')
+def from_author(request):
+    return {
+        'posts': [
+            post for post in request.state['db']
+            if post['author'] == request.params['author']
+        ]
+    }
+
+
+def get_user(request):
+    user = request.args.get('user')
+    if user not in ('admin', 'webmaster', 'joe'):
+        raise Response(401)
+    return user
+
+
+@app.post('/')
+def new(request):
+    request.state['db'].append({
+        'title': request.form.get('title', ''),
+        'author': get_user(request)
+    })
+    return 201
+
+
+@app.after
+def cors(request, response):
+    if request.headers.get('origin'):
+        response.headers['access-control-allow-origin'] = '*'
+
+
+@app.shutdown
+def close_db(state):
+    del state['db']
 
 
 if __name__ == '__main__':
     import uvicorn
     uvicorn.run('__main__:app')
 ```
+
+### Documentation
+
+[API Reference](https://0x67757300.github.io/uHTTP)
 
 ### Extensions
 
