@@ -54,16 +54,25 @@ app = App()
 
 @app.startup
 def open_db(state):
+    state['clients'] = []
     state['db'] = [
         {
-            'title': 'How to Ride a Unicorn',
-            'author': 'admin'
+            'title': 'The Art of Riding Bunnies: A Comprehensive Guide.',
+            'author': 'grace'
         },
         {
-            'title': 'Yummy Vanilla Bread Recipe',
+            'title': 'Vanilla Infusions: Culinary Delights and Sweet Sensations.',
             'author': 'joe'
         }
     ]
+
+
+@app.before
+def log_client(request):
+    request.state['clients'].append({
+        'ip': request.ip,
+        'user-agent': request.headers.get('user-agent')
+    })
 
 
 @app.before
@@ -72,23 +81,23 @@ def incoming(request):
 
 
 @app.get('/')
-def all_posts(request):
-    return {'posts': request.state['db']}
+def all_books(request):
+    return {'books': request.state['db']}
 
 
 @app.get(r'/(?P<author>\w+)')
 def from_author(request):
     return {
-        'posts': [
-            post for post in request.state['db']
-            if post['author'] == request.params['author']
+        'books': [
+            book for book in request.state['db']
+            if book['author'] == request.params['author']
         ]
     }
 
 
 def get_user(request):
     user = request.args.get('user')
-    if user not in ('admin', 'webmaster', 'joe'):
+    if user not in ('grace', 'joe', 'stevens'):
         raise Response(401)
     return user
 
@@ -111,6 +120,12 @@ def cors(request, response):
 @app.shutdown
 def close_db(state):
     del state['db']
+
+
+@app.shutdown
+def print_all_clients(state):
+    for client in state['clients']:
+        print(client['ip'], client['user-agent'])
 
 
 if __name__ == '__main__':
