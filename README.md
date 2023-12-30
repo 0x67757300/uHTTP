@@ -141,7 +141,7 @@ if __name__ == '__main__':
 
 _µHTTP doesn't come with bells and whistles._
 
-If you want more, search for [µHTTP extensions](https://github.com/topics/uhttp).
+If you want more, search for [µHTTP extensions](https://github.com/topics/uhttp-extension).
 
 ### Contributing
 

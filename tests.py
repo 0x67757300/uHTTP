@@ -1,83 +1,85 @@
 from uhttp import App, MultiDict, Response
 
 
-async def request(app, method, path, query_string=b'', headers=None, body=b''):
-    response = {}
-    state = {}
+class TestApp(App):
+    async def test(
+        self, method, path, query_string=b'', headers=None, body=b''
+    ):
+        response = {}
+        state = {}
+        http_scope = {
+            'type': 'http',
+            'method': method,
+            'path': path,
+            'query_string': query_string,
+            'headers': headers or [],
+            'state': state
+        }
 
-    http_scope = {
-        'type': 'http',
-        'method': method,
-        'path': path,
-        'query_string': query_string,
-        'headers': headers or [],
-        'state': state
-    }
+        async def http_receive():
+            return {'body': body, 'more_body': False}
 
-    async def http_receive():
-        return {'body': body, 'more_body': False}
+        async def http_send(event):
+            if event['type'] == 'http.response.start':
+                response['status'] = event['status']
+                response['headers'] = MultiDict([
+                    [k.decode(), v.decode()] for k, v in event['headers']
+                ])
+            elif event['type'] == 'http.response.body':
+                response['body'] = event['body']
 
-    async def http_send(event):
-        if event['type'] == 'http.response.start':
-            response['status'] = event['status']
-            response['headers'] = MultiDict([
-                [k.decode(), v.decode()] for k, v in event['headers']
-            ])
-        elif event['type'] == 'http.response.body':
-            response['body'] = event['body']
+        lifespan_scope = {'type': 'lifespan', 'state': state}
 
-    lifespan_scope = {'type': 'lifespan', 'state': state}
+        async def lifespan_receive():
+            if not response:
+                return {'type': 'lifespan.startup'}
+            elif 'body' in response:
+                return {'type': 'lifespan.shutdown'}
+            else:
+                return {'type': ''}
 
-    async def lifespan_receive():
-        if not response:
-            return {'type': 'lifespan.startup'}
-        elif 'body' in response:
-            return {'type': 'lifespan.shutdown'}
-        else:
-            return {'type': ''}
+        async def lifespan_send(event):
+            if event['type'] == 'lifespan.startup.complete':
+                await self(http_scope, http_receive, http_send)
+            elif 'message' in event:
+                message = event['message'].encode()
+                response['status'] = 500
+                response['headers'] = MultiDict({
+                    'content-length': str(len(message))
+                })
+                response['body'] = message
 
-    async def lifespan_send(event):
-        if event['type'] == 'lifespan.startup.complete':
-            await app(http_scope, http_receive, http_send)
-        elif 'message' in event:
-            message = event['message'].encode()
-            response['status'] = 500
-            response['headers'] = MultiDict({
-                'content-length': str(len(message))
-            })
-            response['body'] = message
+        await self(lifespan_scope, lifespan_receive, lifespan_send)
 
-    await app(lifespan_scope, lifespan_receive, lifespan_send)
-
-    return response
+        return response
 
 
 async def test_lifespan_startup_fail():
-    app = App()
+    app = TestApp()
 
     @app.startup
     def fail(state):
         1 / 0
 
-    response = await request(app, 'GET', '/')
+    response = await app.test('GET', '/')
     assert response['status'] == 500
     assert response['body'] == b'ZeroDivisionError: division by zero'
 
 
 async def test_lifespan_shutdown_fail():
-    app = App()
+    app = TestApp()
 
     @app.shutdown
     def fail(state):
         1 / 0
 
-    response = await request(app, 'GET', '/')
+    response = await app.test('GET', '/')
     assert response['status'] == 500
     assert response['body'] == b'ZeroDivisionError: division by zero'
 
 
 async def test_lifespan_startup():
-    app = App()
+    app = TestApp()
 
     @app.startup
     def startup(state):
@@ -87,12 +89,12 @@ async def test_lifespan_startup():
     def say_hi(request):
         return request.state.get('msg')
 
-    response = await request(app, 'GET', '/')
+    response = await app.test('GET', '/')
     assert response['body'] == b'HI!'
 
 
 async def test_lifespan_shutdown():
-    app = App()
+    app = TestApp()
     msgs = ['HI!']
 
     @app.startup
@@ -103,49 +105,50 @@ async def test_lifespan_shutdown():
     def shutdown(state):
         state['msgs'].append('BYE!')
 
-    await request(app, 'GET', '/')
+    await app.test('GET', '/')
     assert msgs[-1] == 'BYE!'
 
 
 async def test_204():
-    app = App()
+    app = TestApp()
 
     @app.get('/')
     def nop(request):
         pass
 
-    response = await request(app, 'GET', '/')
+    response = await app.test('GET', '/')
     assert response['status'] == 204
     assert response['body'] == b''
 
 
 async def test_404():
-    response = await request(App(), 'GET', '/')
+    app = TestApp()
+    response = await app.test('GET', '/')
     assert response['status'] == 404
 
 
 async def test_405():
-    app = App()
+    app = TestApp()
 
     @app.route('/', methods=('GET', 'POST'))
     def index(request):
         pass
 
-    response = await request(app, 'PUT', '/')
+    response = await app.test('PUT', '/')
     assert response['status'] == 405
     assert response['headers'].get('allow') == 'GET, POST'
 
 
 async def test_413():
-    app = App()
-    response = await request(
-        app, 'POST', '/', body=b' '*(app._max_content + 1)
+    app = TestApp()
+    response = await app.test(
+        'POST', '/', body=b' '*(app._max_content + 1)
     )
     assert response['status'] == 413
 
 
 async def test_methods():
-    app = App()
+    app = TestApp()
     methods = ('GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS')
 
     @app.route('/', methods=methods)
@@ -153,77 +156,76 @@ async def test_methods():
         return request.method
 
     for method in methods:
-        response = await request(app, method, '/')
+        response = await app.test(method, '/')
         assert response['body'] == method.encode()
 
 
 async def test_path_parameters():
-    app = App()
+    app = TestApp()
 
     @app.get(r'/hello/(?P<name>\w+)')
     def hello(request):
         return f'Hello, {request.params.get("name")}!'
 
-    response = await request(app, 'GET', '/hello/john')
+    response = await app.test('GET', '/hello/john')
     assert response['status'] == 200
     assert response['body'] == b'Hello, john!'
 
 
 async def test_query_args():
-    app = App()
+    app = TestApp()
     args = {}
 
     @app.get('/')
     def index(request):
         args.update(request.args)
 
-    await request(
-        app, 'GET', '/', query_string=b'tag=music&tag=rock&type=book'
+    await app.test(
+        'GET', '/', query_string=b'tag=music&tag=rock&type=book'
     )
     assert args == {'tag': ['music', 'rock'], 'type': ['book']}
 
 
 async def test_headers():
-    app = App()
+    app = TestApp()
     headers = {}
 
     @app.get('/')
     def hello(request):
         headers.update(request.headers)
 
-    await request(app, 'GET', '/', headers=[[b'from', b'test@example.com']])
+    await app.test('GET', '/', headers=[[b'from', b'test@example.com']])
     assert headers == {'from': ['test@example.com']}
 
 
 async def test_cookie():
-    app = App()
+    app = TestApp()
 
     @app.get('/')
     def index(request):
         return request.cookies.output(header='Cookie:')
 
-    response = await request(
-        app, 'GET', '/', headers=[[b'cookie', b'id=1;name=john']]
+    response = await app.test(
+        'GET', '/', headers=[[b'cookie', b'id=1;name=john']]
     )
     assert response['body'] == b'Cookie: id=1\r\nCookie: name=john'
 
 
 async def test_set_cookie():
-    app = App()
+    app = TestApp()
 
     @app.get('/')
     def index(request):
         return Response(status=204, cookies={'id': 2, 'name': 'jane'})
 
-    response = await request(app, 'GET', '/')
+    response = await app.test('GET', '/')
     assert response['headers']._get('set-cookie') == ['id=2', 'name=jane']
 
 
 async def test_bad_json():
-    app = App()
+    app = TestApp()
 
-    response = await request(
-        app,
+    response = await app.test(
         'POST',
         '/',
         headers=[[b'content-type', b'application/json']],
@@ -233,15 +235,14 @@ async def test_bad_json():
 
 
 async def test_good_json():
-    app = App()
+    app = TestApp()
     json = {}
 
     @app.post('/')
     def index(request):
         json.update(request.json)
 
-    await request(
-        app,
+    await app.test(
         'POST',
         '/',
         headers=[[b'content-type', b'application/json']],
@@ -251,28 +252,27 @@ async def test_good_json():
 
 
 async def test_json_response():
-    app = App()
+    app = TestApp()
 
     @app.get('/')
     def json_hello(request):
         return {'hello': 'world'}
 
-    response = await request(app, 'GET', '/')
+    response = await app.test('GET', '/')
     assert response['status'] == 200
     assert response['headers']['content-type'] == 'application/json'
     assert response['body'] == b'{"hello": "world"}'
 
 
 async def test_form():
-    app = App()
+    app = TestApp()
     form = {}
 
     @app.post('/')
     def submit(request):
         form.update(request.form)
 
-    await request(
-        app,
+    await app.test(
         'POST',
         '/',
         headers=[[b'content-type', b'application/x-www-form-urlencoded']],
@@ -283,7 +283,7 @@ async def test_form():
 
 
 async def test_early_response():
-    app = App()
+    app = TestApp()
 
     @app.before
     def early(request):
@@ -293,28 +293,28 @@ async def test_early_response():
     def index(request):
         return 'Maybe?'
 
-    response = await request(app, 'GET', '/')
+    response = await app.test('GET', '/')
     assert response['status'] == 200
     assert response['body'] == b"Hi! I'm early!"
 
 
 async def test_late_early_response():
-    app = App()
+    app = TestApp()
 
     @app.after
     def early(request, response):
         response.status = 200
         response.body = b'Am I early?'
 
-    response = await request(app, 'POST', '/')
+    response = await app.test('POST', '/')
     assert response['status'] == 200
     assert response['body'] == b'Am I early?'
     assert response['headers'].get('content-length') == '11'
 
 
 async def test_app_mount():
-    app1 = App()
-    app2 = App()
+    app1 = TestApp()
+    app2 = TestApp()
 
     @app1.route('/')
     def app1_index(request):
