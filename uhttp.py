@@ -234,9 +234,14 @@ class App:
         ```
         """
         def decorator(func):
-            self._routes.setdefault(path, {}).update({
-                method: func for method in methods
-            })
+            for route in self._routes:
+                if re.fullmatch(route, path):
+                    self._routes[route].update({
+                        method: func for method in methods
+                    })
+                    break
+            else:
+                self._routes[path] = {method: func for method in methods}
             return func
         return decorator
 
@@ -494,7 +499,7 @@ class Response(Exception):
             self.description = HTTPStatus(status).phrase
         except ValueError:
             self.description = ''
-        super().__init__(self.description)
+        super().__init__(f'{self.status} {self.description}')
         self.headers = MultiDict(headers)
         """The response headers.
 
@@ -515,9 +520,6 @@ class Response(Exception):
         """
         if not self.body and status in range(400, 600):
             self.body = str(self).encode()
-
-    def __repr__(self):
-        return f'{self.status} {self.description}'
 
     @classmethod
     def from_any(cls, any):
