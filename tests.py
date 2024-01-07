@@ -1,7 +1,7 @@
-from uhttp import App, MultiDict, Response
+from uhttp import Application, MultiDict, Response
 
 
-class TestApp(App):
+class TestApplication(Application):
     async def test(
         self, method, path, query_string=b'', headers=None, body=b''
     ):
@@ -55,7 +55,7 @@ class TestApp(App):
 
 
 async def test_lifespan_startup_fail():
-    app = TestApp()
+    app = TestApplication()
 
     @app.startup
     def fail(state):
@@ -67,7 +67,7 @@ async def test_lifespan_startup_fail():
 
 
 async def test_lifespan_shutdown_fail():
-    app = TestApp()
+    app = TestApplication()
 
     @app.shutdown
     def fail(state):
@@ -79,7 +79,7 @@ async def test_lifespan_shutdown_fail():
 
 
 async def test_lifespan_startup():
-    app = TestApp()
+    app = TestApplication()
 
     @app.startup
     def startup(state):
@@ -94,7 +94,7 @@ async def test_lifespan_startup():
 
 
 async def test_lifespan_shutdown():
-    app = TestApp()
+    app = TestApplication()
     msgs = ['HI!']
 
     @app.startup
@@ -110,7 +110,7 @@ async def test_lifespan_shutdown():
 
 
 async def test_204():
-    app = TestApp()
+    app = TestApplication()
 
     @app.get('/')
     def nop(request):
@@ -122,13 +122,13 @@ async def test_204():
 
 
 async def test_404():
-    app = TestApp()
+    app = TestApplication()
     response = await app.test('GET', '/')
     assert response['status'] == 404
 
 
 async def test_405():
-    app = TestApp()
+    app = TestApplication()
 
     @app.route('/', methods=('GET', 'POST'))
     def index(request):
@@ -140,7 +140,7 @@ async def test_405():
 
 
 async def test_413():
-    app = TestApp()
+    app = TestApplication()
     response = await app.test(
         'POST', '/', body=b' '*(app._max_content + 1)
     )
@@ -148,7 +148,7 @@ async def test_413():
 
 
 async def test_methods():
-    app = TestApp()
+    app = TestApplication()
     methods = ('GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS')
 
     @app.route('/', methods=methods)
@@ -161,7 +161,7 @@ async def test_methods():
 
 
 async def test_path_parameters():
-    app = TestApp()
+    app = TestApplication()
 
     @app.get(r'/hello/(?P<name>\w+)')
     def hello(request):
@@ -173,7 +173,7 @@ async def test_path_parameters():
 
 
 async def test_query_args():
-    app = TestApp()
+    app = TestApplication()
     args = {}
 
     @app.get('/')
@@ -187,7 +187,7 @@ async def test_query_args():
 
 
 async def test_headers():
-    app = TestApp()
+    app = TestApplication()
     headers = {}
 
     @app.get('/')
@@ -199,7 +199,7 @@ async def test_headers():
 
 
 async def test_cookie():
-    app = TestApp()
+    app = TestApplication()
 
     @app.get('/')
     def index(request):
@@ -212,7 +212,7 @@ async def test_cookie():
 
 
 async def test_set_cookie():
-    app = TestApp()
+    app = TestApplication()
 
     @app.get('/')
     def index(request):
@@ -223,7 +223,7 @@ async def test_set_cookie():
 
 
 async def test_bad_json():
-    app = TestApp()
+    app = TestApplication()
 
     response = await app.test(
         'POST',
@@ -235,7 +235,7 @@ async def test_bad_json():
 
 
 async def test_good_json():
-    app = TestApp()
+    app = TestApplication()
     json = {}
 
     @app.post('/')
@@ -252,7 +252,7 @@ async def test_good_json():
 
 
 async def test_json_response():
-    app = TestApp()
+    app = TestApplication()
 
     @app.get('/')
     def json_hello(request):
@@ -265,7 +265,7 @@ async def test_json_response():
 
 
 async def test_form():
-    app = TestApp()
+    app = TestApplication()
     form = {}
 
     @app.post('/')
@@ -283,7 +283,7 @@ async def test_form():
 
 
 async def test_early_response():
-    app = TestApp()
+    app = TestApplication()
 
     @app.before
     def early(request):
@@ -299,7 +299,7 @@ async def test_early_response():
 
 
 async def test_late_early_response():
-    app = TestApp()
+    app = TestApplication()
 
     @app.after
     def early(request, response):
@@ -313,8 +313,8 @@ async def test_late_early_response():
 
 
 async def test_app_mount():
-    app1 = TestApp()
-    app2 = TestApp()
+    app1 = TestApplication()
+    app2 = TestApplication()
 
     @app1.route('/')
     def app1_index(request):
