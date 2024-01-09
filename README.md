@@ -86,7 +86,7 @@ utils = Application()
 
 @utils.before
 def incoming(request):
-    print('Incoming from {request.ip}')
+    print(f'Incoming from {request.ip}')
 
 app.mount(utils)
 ```
@@ -138,7 +138,7 @@ E.g.:
 
 ```python
 @app.before
-def restricted(request):
+def restrict(request):
     user = request.state['session'].get('user')
     if user != 'admin':
         raise Response(401)
@@ -176,19 +176,7 @@ If the request path doesn't match any route pattern, a `404 Not Found` response 
 
 If the request method isn't in the route methods, a `405 Method Not Allowed` response is returned.
 
-Decorators for the standard methods are also available:
-
-```python
-@app.get(path)
-@app.head(path)
-@app.post(path)
-@app.put(path)
-@app.delete(path)
-@app.connect(path)
-@app.options(path)
-@app.trace(path)
-@app.patch(path)
-```
+Decorators for the standard methods are also available.
 
 E.g.:
 
@@ -200,7 +188,7 @@ def index(request):
 @app.get(r'/user/(?P<id>\d+)')
 def profile(request):
     user = request.state['db'].get_or_404(request.params['id'])
-    return '{user.name} has {user.friends} friends and lives in {user.location}'
+    return f'{user.name} has {user.friends} friends!'
 ```
 
 ### Request
@@ -213,7 +201,7 @@ Request(method, path, *, ip='', params=None, args=None, headers=None, cookies=No
 
 ### Response
 
-An HTTP Response.
+An HTTP Response. May be raised or returned at any time in middleware or route functions.
 
 ```python
 Response(status, *, headers=None, cookies=None, body=b'')
@@ -247,7 +235,7 @@ def profile(request):
     if request.args.get('json'):
         return user
     else:
-        return "{user['name']} likes {', '.join(user['likes'])}"
+        return f"{user['name']} likes {', '.join(user['likes'])}"
 ```
 
 ## Patterns
